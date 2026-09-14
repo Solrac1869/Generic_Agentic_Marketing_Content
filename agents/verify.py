@@ -375,7 +375,7 @@ def check_site(brand):
     # Is the newest commit actually deployed? A push that never built is
     # indistinguishable from a successful one without checking the page.
     repo = pathlib.Path(brand.get("channels", {}).get("blog", {})
-                        .get("droplet_repo", "/root/airp-website"))
+                        .get("working_copy") or "")
     cdir = repo / brand.get("channels", {}).get("blog", {}).get("content_dir", "src/content/blog")
     if cdir.exists():
         live_posts = [f.stem for f in cdir.glob("*.md") if "draft: true" not in f.read_text()]

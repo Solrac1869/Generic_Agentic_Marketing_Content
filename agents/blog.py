@@ -101,7 +101,9 @@ def _existing_articles(brand):
     an AI assistant a route between related answers.
     """
     cfg = brand.get("channels", {}).get("blog", {})
-    repo = pathlib.Path(cfg.get("droplet_repo", "/root/airp-website"))
+    repo = pathlib.Path(cfg.get("working_copy") or cfg.get("droplet_repo") or "")
+    if not str(repo):
+        raise RuntimeError("channels.yaml: blog.working_copy is not set, so there is nowhere to write articles")
     cdir = repo / cfg.get("content_dir", "src/content/blog")
     if not cdir.exists():
         cdir = pathlib.Path(cfg.get("repo", "")).expanduser() / cfg.get("content_dir", "")
@@ -266,8 +268,8 @@ def _ensure_repo(brand, reset=True):
     # looks exactly like a successful push. The commit message carries the real
     # authorship instead.
     cfg_email = (brand.get("channels", {}).get("blog", {})
-                 .get("commit_email", "carl.chessum@aireadinesspartner.com"))
-    _git(repo, "config", "user.name", "Carl Chessum", check=False)
+                 .get("commit_email") or "agent@localhost")
+    _git(repo, "config", "user.name", _commit_name, check=False)
     _git(repo, "config", "user.email", cfg_email, check=False)
     return repo, None
 
@@ -614,12 +616,22 @@ def run(brand, budget, dry_run=False, from_raw=False, mode=None, **kw):
     def esc(s):
         return str(s).replace('"', "'")
 
+    # Who this article is credited to, and who commits it. Both come from
+    # config: an article bylined to whoever the system was extracted from is
+    # the most visible way a generic tool announces it is not yours.
+    from core import settings as _s
+    _author = _s.author(brand)
+    _commit_name, _commit_email = _s.commit_identity(brand)
+
+    def _esc(x):
+        return str(x).replace('"', "'")
+
     fm = [
         "---",
         f'title: "{esc(art.get("title"))}"',
         f'description: "{esc(art.get("description"))}"',
         f"pubDate: {datetime.date.today().isoformat()}",
-        'author: "Carl Chessum"',
+        *( [f'author: "{_esc(_author)}"'] if _author else [] ),
     ] + ([f'heroImage: "{hero_rel}"', f'heroImageAlt: "{esc(hero_alt)}"'] if hero_rel else []) + [
         f'categories: [{", ".join(chr(34) + esc(c) + chr(34) for c in art.get("categories", []))}]',
         f'tags: [{", ".join(chr(34) + esc(t) + chr(34) for t in art.get("tags", []))}]',

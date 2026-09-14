@@ -60,7 +60,10 @@ def _cfg(brand):
 
 
 def _repo(brand):
-    return pathlib.Path(_cfg(brand).get("droplet_repo", "/root/airp-website"))
+    p = _cfg(brand).get("working_copy") or _cfg(brand).get("droplet_repo")
+    if not p:
+        raise RuntimeError("channels.yaml: blog.working_copy is not set")
+    return pathlib.Path(p).expanduser()
 
 
 def _content_dir(brand):

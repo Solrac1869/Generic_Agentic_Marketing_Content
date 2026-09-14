@@ -26,7 +26,9 @@ the sample is too small to conclude anything, say so plainly and say what would
 make it conclusive. Your reader acts on this, so a confident wrong answer costs
 more than an honest "not yet known"."""
 
-LEADS_HOST = "root@161.35.74.240"
+LEADS_HOST = os.environ.get("LEADS_HOST", "")  # optional second host
+# Empty means there is no separate leads host, which is the common case.
+# The original system kept its CRM on another droplet; most will not.
 LEADS_PATH = "/root/ai-readiness-audit/leads.csv"
 # The droplet uses a dedicated key restricted by a forced command on the audit
 # host, so it can read leads.csv and do nothing else. The Mac path is kept as a
