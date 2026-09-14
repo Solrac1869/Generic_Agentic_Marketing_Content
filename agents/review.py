@@ -34,7 +34,7 @@ import datetime
 import json
 import pathlib
 
-from core import llm, performance
+from core import llm, performance, skills
 
 SYSTEM = """You assess whether a marketing approach is working, over months
 rather than weeks.
@@ -203,7 +203,8 @@ empty recommended_stop, and possibly a build request. That is a good answer."""
         return "dry run, nothing written"
 
     text, _, usage = llm.call(prompt, model=model, budget=budget, agent="review",
-                              system=SYSTEM, max_tokens=4000, thinking=False)
+                              system=skills.augment(SYSTEM, "review"),
+                              max_tokens=4000, thinking=False)
     got = llm.extract_json(text) or {}
 
     path = _dir(brand) / f"{month}.md"

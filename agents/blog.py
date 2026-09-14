@@ -18,6 +18,36 @@ import datetime, json, os, pathlib, re, shutil, subprocess
 from core import weeks, skills
 from core import llm, qa_lint, hero_image, utm
 
+
+def _esc(s):
+    """Quote-safe for a YAML front matter value."""
+    return str(s).replace('"', '\\"')
+
+
+def _author(brand=None):
+    """Whose byline goes on an article, or None so the field is omitted."""
+    from core import settings
+    return settings.author(brand)
+
+
+
+
+# ── commit identity, from config rather than a person's name ────────
+
+def _identity():
+    from core import settings, orchestrator
+    try:
+        return settings.commit_identity(
+            orchestrator.load_brand(orchestrator.default_brand_id()))
+    except Exception:
+        return ("Content agent", "agent@localhost")
+
+
+_commit_name = _identity()[0]
+_commit_email = _identity()[1]
+
+
+
 # Two goes at an article, then the queue moves on. The third attempt has never
 # produced anything the first two did not; it just spends Opus money and keeps
 # the rest of the week unwritten.
@@ -616,16 +646,6 @@ def run(brand, budget, dry_run=False, from_raw=False, mode=None, **kw):
 
     def esc(s):
         return str(s).replace('"', "'")
-
-    # Who this article is credited to, and who commits it. Both come from
-    # config: an article bylined to whoever the system was extracted from is
-    # the most visible way a generic tool announces it is not yours.
-    from core import settings as _s
-    _author = _s.author(brand)
-    _commit_name, _commit_email = _s.commit_identity(brand)
-
-    def _esc(x):
-        return str(x).replace('"', "'")
 
     fm = [
         "---",

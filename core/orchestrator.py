@@ -40,36 +40,6 @@ def load_env():
             pass  # running unprivileged; key may come from the environment
 
 
-def default_brand_id():
-    """The brand to use when the caller did not name one.
-
-    A notification helper has no brand in hand and should not need one. The
-    original system hardcoded its own slug here, which is exactly the kind of
-    default that works perfectly for one installation and silently loads the
-    wrong config for every other.
-
-    Resolution order: the DEFAULT_BRAND environment variable, then the only
-    brand directory if there is exactly one, then nothing. Two brands and no
-    variable is genuinely ambiguous, so it raises rather than picking.
-    """
-    import os
-    named = os.environ.get("DEFAULT_BRAND")
-    if named:
-        return named
-    d = ROOT / "brands"
-    dirs = sorted(x.name for x in d.glob("*") if (x / "brand.yaml").exists()) \
-        if d.exists() else []
-    if len(dirs) == 1:
-        return dirs[0]
-    if not dirs:
-        raise RuntimeError(
-            "No brand is configured. Copy config/brand.example.yaml to "
-            "brands/<your-brand>/brand.yaml, or run: python3 setup.py")
-    raise RuntimeError(
-        "More than one brand is configured (%s). Set DEFAULT_BRAND to say "
-        "which one unattended jobs should use." % ", ".join(dirs))
-
-
 def load_brand(brand_id):
     """The brand config, merged from both tiers into one dict.
 
@@ -216,6 +186,28 @@ class BudgetExceeded(RuntimeError):
 AGENTS = ["research", "strategy", "produce", "publish", "analyse", "site", "blog", "engage", "verify", "video", "seo", "status", "report", "refresh", "critic", "review", "crm", "media"]
 
 
+def _breaker_blocks(agent):
+    """True when the account itself is broken, so starting is pointless.
+
+    Cron has no memory. Without this, every agent scheduled after an account
+    fault runs, reaches the API, is refused, and exits 1 -- turning one
+    fixable problem into a stream of identical alerts that bury it.
+
+    verify and status are exempt: they are how the fault gets reported, and
+    silencing the reporter is how an outage becomes invisible.
+    """
+    if agent in ("verify", "status", "report"):
+        return False
+    from core import llm
+    tripped, reason = llm.breaker_state()
+    if not tripped:
+        return False
+    print("  skipped: the API account is not usable, so this cannot succeed.")
+    print("  %s" % reason)
+    print("  Any successful call clears this automatically.")
+    return True
+
+
 def run_agent(name, brand, budget, dry_run=False, from_raw=False, only_channel=None, mode=None):
     if name not in AGENTS:
         sys.exit(f"Unknown agent '{name}'. Available: {', '.join(AGENTS)}")
@@ -234,6 +226,8 @@ def run_agent(name, brand, budget, dry_run=False, from_raw=False, only_channel=N
         kw["only_channel"] = only_channel
     if mode and "mode" in params:
         kw["mode"] = mode
+    if _breaker_blocks(name):
+        return "skipped: API account unusable"
     return mod.run(brand, budget, dry_run=dry_run, **kw)
 
 

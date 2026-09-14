@@ -31,7 +31,7 @@ import datetime
 import json
 import pathlib
 
-from core import llm, performance
+from core import llm, performance, skills
 
 SYSTEM = """You allocate marketing effort between channels for a small B2B brand,
 and you are accountable for the return rather than for the output.
@@ -159,7 +159,8 @@ proposals list with an honest assessment is a good answer."""
         return "dry run, nothing written"
 
     text, _, usage = llm.call(prompt, model=model, budget=budget, agent="media",
-                              system=SYSTEM, max_tokens=3000, thinking=False)
+                              system=skills.augment(SYSTEM, "media"),
+                              max_tokens=3000, thinking=False)
     got = llm.extract_json(text) or {}
     props = [p for p in (got.get("proposals") or []) if isinstance(p, dict)]
 

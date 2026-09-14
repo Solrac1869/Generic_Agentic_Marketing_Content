@@ -21,8 +21,8 @@ from core.x_client import client as x_client, me as x_me, XConfigError
 
 
 # ── who notifications are to and from ───────────────────────────────
-# Thin wrappers over core.settings so the call sites read the way they did
-# before, and so there is exactly one place a brand's identity is resolved.
+# Thin wrappers over core.settings so the call sites read as they do upstream
+# and there is one place a brand's identity is resolved.
 
 def _recipient_name(brand=None):
     from core import settings

@@ -20,7 +20,64 @@ explicitly rather than filling the gap with plausible-sounding assertions, an un
 than a gap. Be specific and concrete. Never use marketing filler."""
 
 
-def _prompt(brand, prior_titles, analytics):
+def _demand(brand, bdir):
+    """Real queries people type, gathered before the model is asked anything.
+
+    Without this the topic section is the model recalling what an audience
+    probably searches for. That produces plausible queries, and a plan built
+    to answer questions nobody asked. Autocomplete is not a volume estimate,
+    but every suggestion in it is a phrase enough people typed for Google to
+    offer it, which is a different kind of fact from a guess.
+
+    Failure here is never fatal. A research run that dies because a free
+    public endpoint was slow is worse than one that proceeds with less.
+    """
+    from core import demand
+    cfg = (brand.get("research") or {}).get("demand") or {}
+    if not cfg.get("enabled", True):
+        return ""
+    seeds = cfg.get("seeds") or []
+    if not seeds:
+        # Fall back to the brand's own pillars: they are what it argues about,
+        # so they are the right place to look for what its audience asks.
+        seeds = [str(p.get("name") or p) for p in (brand.get("pillars") or [])][:4]
+    if not seeds:
+        return ""
+    try:
+        rows = demand.classify(demand.expand(seeds, pause=cfg.get("pause", 0.2)))
+        rows, dropped = demand.filter_relevant(
+            rows, cfg.get("exclude") or (), cfg.get("require_any") or ())
+        gsc = _latest_gsc(bdir)
+        rows = demand.gaps(rows, gsc)
+        print("  demand: %d real quer(ies), %d dropped as the wrong audience, "
+              "%d not ranking" % (len(rows), len(dropped),
+                                  sum(1 for r in rows if r.get("opportunity"))))
+        return demand.report(rows, top=cfg.get("report_top", 60))
+    except Exception as e:
+        print("  demand: skipped (%s: %s)" % (type(e).__name__, str(e)[:90]))
+        return ""
+
+
+def _latest_gsc(bdir):
+    """The newest Search Console export, or an empty list.
+
+    Date-named files only: the directory also holds difficulty.json, which
+    sorts after every date and would otherwise be picked as the newest run.
+    """
+    import json as _json
+    d = bdir / "seo"
+    if not d.exists():
+        return []
+    files = sorted(d.glob("20??-??-??.json"))
+    if not files:
+        return []
+    try:
+        return _json.loads(files[-1].read_text()).get("top_queries") or []
+    except Exception:
+        return []
+
+
+def _prompt(brand, prior_titles, analytics, demand_report=""):
     a = brand.get("audience", {})
     channels = brand.get("channels", {})
     enabled = [k for k, v in channels.items() if v.get("enabled")]
@@ -70,6 +127,16 @@ data reports? Cite evidence, not convention.
 ## 4. Competitive and comparable activity
 What are comparable operators doing that visibly works? Name them, describe
 the mechanic, cite sources.
+
+{("\n=== REAL SEARCH DEMAND ===\nThese are actual queries from Google "
+   "autocomplete, gathered before you were asked anything. Every one is a "
+   "phrase enough people typed for Google to suggest it. Queries marked "
+   "[not ranking] are ones this site does not currently appear for.\n\n"
+   + demand_report +
+   "\n\nUse these. A topic grounded in a query on this list is evidence; a "
+   "topic you thought of is a guess. Where a real query contradicts what you "
+   "would have proposed, follow the query and say so.\n")
+  if demand_report else ""}
 
 ## 5. Topic opportunities
 5-8 specific topics with genuine evidence of demand. For each: the topic, why
@@ -140,7 +207,10 @@ def run(brand, budget, dry_run=False):
         if files:
             analytics = files[-1].read_text()[:3000]
 
-    prompt = _prompt(brand, prior_titles, analytics)
+    # Gathered first, so the model reasons from real queries rather
+    # than recalling plausible ones.
+    demand_report = _demand(brand, bdir)
+    prompt = _prompt(brand, prior_titles, analytics, demand_report)
 
     if dry_run:
         print(prompt[:1500] + "\n[...truncated]")

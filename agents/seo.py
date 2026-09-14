@@ -23,7 +23,7 @@ for weeks.
 """
 
 import datetime, json, pathlib, re
-from core import llm
+from core import llm, skills
 
 GSC_API = "https://searchconsole.googleapis.com/webmasters/v3/sites/{site}/searchAnalytics/query"
 
@@ -441,7 +441,7 @@ Return one JSON object in a fenced json block:
     # At 6000 the reply truncated mid-JSON and parsed to nothing, which looked
     # like "no competitors found" rather than a failure.
     text, cites, usage = llm.call(prompt, model=model, budget=budget, agent="seo:competitors",
-                                  system=SYSTEM, max_tokens=14000,
+                                  system=skills.augment(SYSTEM, "seo"), max_tokens=14000,
                                   web_search=True, max_searches=6)
     parsed = llm.extract_json(text)
     if usage.get("stop_reason") == "max_tokens":

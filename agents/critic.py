@@ -35,7 +35,7 @@ import datetime
 import json
 import pathlib
 
-from core import weeks
+from core import weeks, skills
 from core import llm, performance
 
 SYSTEM = """You are the last check on a week's marketing plan before anything is
@@ -131,7 +131,8 @@ a good outcome and is what most weeks should produce."""
 
     model = brand.get("budget", {}).get("model_research", "claude-sonnet-5")
     text, _, usage = llm.call(prompt, model=model, budget=budget, agent="critic",
-                              system=SYSTEM, max_tokens=2000, thinking=False)
+                              system=skills.augment(SYSTEM, "critic"),
+                              max_tokens=2000, thinking=False)
     got = llm.extract_json(text) or {}
     if not isinstance(got, dict):
         got = {}

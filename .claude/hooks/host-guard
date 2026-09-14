@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+"""Refuse the three mistakes that keep happening, at the moment they are made.
+
+CLAUDE.md has said all of this from the start: which SSH key opens the
+droplet, that a local clone is for reading rather than changing, and that the
+droplet is what actually runs. It was correct, it was in context, and it was
+not acted on -- twice in one session, once after being told.
+
+Prose in a file is a reminder, and a reminder only works on someone who stops
+to read it. This is the same knowledge as a refusal, which works whether or not
+anyone stopped. It is deliberately narrow: three rules, each one a mistake that
+has actually been made here and cost real time.
+
+Exit 0 allows. Exit 2 blocks and shows the reason.
+"""
+
+import json
+import os
+import re
+import sys
+
+STALE = os.path.expanduser("~/Projects/marketing-agents")
+LIVE = os.path.expanduser("~/Projects/marketing-agents-live")
+
+#: Things that only mean anything on the machine that runs the system. Run on a
+#: laptop they read a crontab that is not there and a state directory that is
+#: not there, and report confidently about nothing.
+HOST_ONLY = re.compile(
+    r"(bin/conformance\.py|bin/run-agent\.sh|core/orchestrator\.py"
+    r"|python3?\s+-m\s+agents|agents/\w+\.py)")
+
+
+def block(msg):
+    sys.stderr.write(msg + "\n")
+    sys.exit(2)
+
+
+def main():
+    try:
+        ev = json.load(sys.stdin)
+    except Exception:
+        sys.exit(0)
+
+    tool = ev.get("tool_name") or ""
+    inp = ev.get("tool_input") or {}
+
+    # ── 1. the stale checkout ───────────────────────────────────────
+    # Thirteen days behind, and edited for half an hour before anyone noticed
+    # it was not the live code.
+    if tool in ("Edit", "Write", "NotebookEdit"):
+        path = str(inp.get("file_path") or "")
+        if path.startswith(STALE + os.sep) or path == STALE:
+            block("BLOCKED: %s is a stale checkout, not the live code.\n"
+                  "Work in %s, which tracks GitHub and the droplet.\n"
+                  "If you believe the stale copy is correct, check "
+                  "git log against origin/main before overriding." % (path, LIVE))
+
+    # ── 2. running the system on a workstation ──────────────────────
+    if tool == "Bash":
+        cmd = str(inp.get("command") or "")
+        # ssh to the droplet is the correct way to do these, so anything that
+        # already goes through ssh is fine.
+        naked = re.sub(r"ssh\s+\S*mkt\b.*", "", cmd, flags=re.S)
+        if HOST_ONLY.search(naked) and "--local" not in naked:
+            m = HOST_ONLY.search(naked)
+            block("BLOCKED: %s only means something on the droplet.\n"
+                  "This machine has no crontab, no state directory and no live\n"
+                  "remotes, so the answer would describe the laptop.\n\n"
+                  "Run it where the system runs:\n"
+                  "    ssh mkt 'cd /root/marketing-agents && <command>'\n\n"
+                  "CLAUDE.md, Where it runs: the droplet is canonical."
+                  % m.group(1))
+
+        # ── 3. hunting for the SSH key that is already documented ───
+        if re.search(r"ssh\b[^|;]*root@165\.245\.252\.73", cmd) and "id_audit_server" not in cmd:
+            block("BLOCKED: use the documented host alias, not the raw address.\n"
+                  "    ssh mkt '<command>'\n\n"
+                  "CLAUDE.md line 22 names the key: ~/.ssh/id_audit_server.\n"
+                  "Three other keys were tried against the raw IP in one session\n"
+                  "and the conclusion drawn was that the droplet was unreachable.")
+
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

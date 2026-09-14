@@ -14,7 +14,7 @@ Remotion stays available for set pieces. This is the everyday path.
 """
 
 import datetime, json, os, pathlib, re, subprocess, urllib.request
-from core import weeks
+from core import weeks, skills
 from core import hero_image, llm, qa_lint, utm, video_config, video_providers
 
 ELEVEN_URL = "https://api.elevenlabs.io/v1/text-to-speech/{voice}"
@@ -252,7 +252,9 @@ Four to six scenes, 30 to 45 seconds in total. Return one JSON object:
     model = video_config.settings(brand).get("draft_model", "claude-opus-5")
     print(f"writing {slug} with {model}...")
     text, _, usage = llm.call(prompt, model=model, budget=budget, agent="video",
-                              system=UGC_SYSTEM if fmt == "ugc_presenter" else SYSTEM,
+                              system=skills.augment(
+                                  UGC_SYSTEM if fmt == "ugc_presenter" else SYSTEM,
+                                  "video"),
                               max_tokens=3000, thinking=False)
     script = llm.extract_json(text) or {}
     if not script.get("scenes"):

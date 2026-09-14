@@ -1,42 +1,51 @@
 # Skills
 
-Craft guidance loaded into the system prompt by `core/skills.py`.
+Craft guidance loaded into each agent's system prompt by `core/skills.py`.
+`FOR_JOB` maps every agent to what its job needs.
 
-This directory is empty on purpose. What belongs here is your house standards:
-your tone, the structure you want, the things you keep having to correct. That
-is worth more to your output than anything shipped generically, and a generic
-default would quietly make every buyer's content read the same.
+These ship with the repo so a new deployment writes properly from its first
+run rather than from the model's general knowledge. That is most of the
+difference between output that reads like the brand and output that reads like
+everyone.
 
-## Adding one
+## Where they came from
 
-Create `skills/<name>/SKILL.md` and write the guidance as plain markdown.
-YAML frontmatter is stripped if present, so a skill written for Claude Code
-can be dropped in unchanged.
+Most are from **github.com/syntax-syndicate/marketing-skills**, MIT licensed.
+Some are installed under shorter names than the repository uses — `cro` for
+`page-cro`, `emails` for `email-sequence`, `ads` for `paid-ads` — and the
+bodies differ only in how they cross-reference each other.
 
-Then name it in the `FOR_JOB` map in `core/skills.py`:
+Two are from **github.com/alirezarezvani/claude-skills**, also MIT, and carry
+their own `SOURCE.md`: `observability-designer` and `incident-commander`. They
+cover something no marketing skill does — designing checks against what can go
+wrong rather than against what has already gone wrong, and classifying a fault
+by how much it actually matters.
 
-    FOR_JOB = {
-        "blog":             ["content-strategy", "ai-seo", "house-voice"],
-        "produce:linkedin": ["copywriting", "social", "house-voice"],
-        ...
-    }
+## Adding your own
 
-Check what a job loads:
+Create `skills/<name>/SKILL.md` and write it as plain markdown; YAML front
+matter is stripped, so a skill written for Claude Code drops in unchanged.
+Then name it in `FOR_JOB` in `core/skills.py`.
 
-    python3 core/skills.py blog
-    python3 core/skills.py          # the whole map, and what is missing
+House standards — your tone, your structure, the corrections you keep making —
+are worth more here than anything generic, and they are what makes one
+deployment sound different from another.
+
+    python3 core/skills.py blog     # what one job loads
+    python3 core/skills.py          # the whole map
 
 ## Two things worth knowing
 
-**Keep it to about three per job.** A model handed seven overlapping documents
+**Three per job, four at most.** A model handed seven overlapping documents
 averages them, and the guidance specific to the job gets diluted by the
 guidance that is not.
 
-**Cost is not the objection it looks like.** A skill is typically 10-15 KB, so
-three is around nine thousand tokens of extra system prompt. The system prompt
-is sent as a cacheable block and is byte-identical across every call an agent
-makes, so the first draft of a run pays and the rest read from cache at a
-tenth of the price.
+**Cost is not the objection it looks like.** Three skills is roughly nine
+thousand tokens of extra system prompt. The system prompt is sent as a
+cacheable block and is identical across every call an agent makes, so the
+first call in a run pays and the rest read from cache at a tenth.
 
-If you keep your skills somewhere else, point `SKILLS_DIR` at that directory
-and it is searched after this one.
+Anything added from outside goes into the system prompt of agents that publish
+under a client's name. Read it in full first: check for instructions that act
+outside the agent's job, anything touching credentials, and anything making
+outbound calls.

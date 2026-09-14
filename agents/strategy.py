@@ -1037,6 +1037,52 @@ def run(brand, budget, dry_run=False, from_raw=False, mode=None, **kw):
     except Exception as _e:
         print("  WARNING: citation pass failed, plan written unrepaired: %s: %s"
               % (type(_e).__name__, str(_e)[:140]))
+    # Gate 1. Until now brief_lint was called from one place -- the dashboard
+    # renderer, to draw a panel -- so everything it found was reported and
+    # nothing it found ever stopped anything. A linter whose verdict changes
+    # nothing is not a gate, however it is labelled, and the week's plan went
+    # out with known faults in it while the board showed them.
+    #
+    # It runs here because this is the last point at which the plan is still
+    # ours to change. A FAIL holds the offending item rather than discarding
+    # the week: the rest of the plan is good, and a held item is visible, is
+    # fixable, and cannot publish. Warnings stay warnings.
+    try:
+        from core import brief_lint
+        _held = {}
+        for _r in brief_lint.lint(brand, items):
+            if _r.get("severity") != brief_lint.FAIL:
+                continue
+            _held.setdefault(_r.get("item"), []).append(
+                "%s: %s" % (_r.get("rule"), _r.get("detail")))
+        # urls_live does network I/O, which is why it is not in brief_lint's
+        # default check list: the dashboard renders often and must not make
+        # outbound requests. Here it runs once, when the plan is written, which
+        # is the only moment a dead link is still cheap to fix.
+        try:
+            for _r in brief_lint.urls_live(brand, items):
+                if _r.get("severity") == brief_lint.FAIL:
+                    _held.setdefault(_r.get("item"), []).append(
+                        "%s: %s" % (_r.get("rule"), _r.get("detail")))
+        except Exception as _e:
+            print("  note: link liveness not checked: %s" % type(_e).__name__)
+        for _it in items:
+            _why = _held.get(_it.get("id"))
+            if _why and _it.get("status") == "scheduled":
+                _it["status"] = "held"
+                _it["hold_reason"] = "gate1: " + "; ".join(_why)[:400]
+        if _held:
+            print("  gate1: held %d item(s) that failed the brief lint" % len(_held))
+            for _iid, _why in list(_held.items())[:8]:
+                print("    %s  %s" % (_iid, _why[0][:100]))
+        else:
+            print("  gate1: brief lint clean")
+    except Exception as _e:
+        # A gate that crashes must not take the week with it, but it must not
+        # pass silently either: an unenforced gate is what this replaced.
+        print("  WARNING: gate1 did not run, plan written ungated: %s: %s"
+              % (type(_e).__name__, str(_e)[:140]))
+
     js_path.write_text(json.dumps({
         "week": week, "brand": brand["_id"],
         "bet": plan.get("bet"),

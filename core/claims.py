@@ -479,11 +479,23 @@ def settle_items(brand, budget, items, repair_budget=4, allow_repair=True):
     were redrafted every morning from 31 Aug to 4 Sept 2026 while the repaired
     MIT URL sat in this pool, unread, because nothing called this module.
 
-    This never removes a statistic. A repair that fails is indistinguishable
-    from a fact that cannot be sourced, and the figure also lives in the item's
-    angle text, so stripping it just moves the failure to UNSOURCED_STAT and
-    destroys the claim on the way. A citation that cannot be improved is left
-    exactly as it was.
+    Correct the source; if it cannot be substantiated, drop the claim and put
+    a substantiated one in its place.
+
+    This used to end differently: a citation that could not be improved was
+    left exactly as it was and published. The reasoning was that a failed
+    search is not proof the figure is wrong, and that stripping the statistic
+    just moves the failure to UNSOURCED_STAT. Both are true and neither is a
+    reason to publish a figure credited to an organisation that did not say it.
+    Three went out this way -- a number credited to PwC linking to Forbes, one
+    to Gartner linking to beri.net, one to IBM whose own text named Salesforce.
+
+    The missing step was the replacement. The pool already holds substantiated
+    claims that nothing has used: thirty-three of them at the time of writing,
+    every one unused. So an unrepairable citation is now swapped for one that
+    has been checked, and only if the pool has nothing to offer is the claim
+    cleared and the item left for the gate to hold. Nothing publishes on an
+    unsourced figure, and the week does not lose a slot to a bad citation.
 
     Mutates source_url in place. Returns a list of note strings.
     """
@@ -586,4 +598,65 @@ def settle_items(brand, budget, items, repair_budget=4, allow_repair=True):
         pool[cid] = entry
 
     _atomic_save(brand, data)
+    notes.extend(_replace_unsourced(brand, items))
+    return notes
+
+
+def _replace_unsourced(brand, items):
+    """Swap a citation that could not be substantiated for one that has been.
+
+    Runs after the repair pass, so it only ever sees claims that repair has
+    already failed on. Ordering matters: attempting a swap first would discard
+    a figure that one search would have rescued.
+
+    A replacement is taken from the pool by pick(), which offers the least worn
+    and freshest first, and nothing is used twice in the same week -- the point
+    of the swap is a citation that can be stood behind, not the same statistic
+    appearing four times. If the pool has nothing left, the claim is cleared
+    rather than published: Gate 1 then holds the item, which is visible and
+    fixable, where a bad citation is neither.
+    """
+    from core import qa_lint
+    notes = []
+    spoken = {str(i.get("key_data_point") or "").strip()
+              for i in items if str(i.get("key_data_point") or "").strip()}
+    offered = [c for c in pick(brand, limit=60)
+               if str(c.get("text") or "").strip() not in spoken]
+
+    for it in items:
+        text = str(it.get("key_data_point") or "").strip()
+        if not text:
+            continue
+        mismatch = qa_lint.check_source_attribution(it)
+        if not mismatch:
+            continue
+
+        swap = None
+        while offered and swap is None:
+            cand = offered.pop(0)
+            probe = dict(it)
+            probe["key_data_point"] = cand.get("text")
+            probe["source_url"] = cand.get("url")
+            # The replacement must itself pass the rule it is replacing.
+            # Taking one on trust because it came from the pool is how a bad
+            # citation gets laundered into looking checked.
+            if cand.get("url") and not qa_lint.check_source_attribution(probe):
+                swap = cand
+
+        if swap is not None:
+            it["key_data_point"] = swap.get("text")
+            it["source_url"] = swap.get("url")
+            spoken.add(str(swap.get("text")).strip())
+            try:
+                mark_used(brand, swap.get("id"), it.get("id"))
+            except Exception:
+                pass
+            notes.append("%s: unsourced claim replaced with a substantiated one (%s)"
+                         % (it.get("id"), str(swap.get("url")).split("/")[2]))
+        else:
+            it["key_data_point"] = ""
+            it["source_url"] = ""
+            it["claim_dropped"] = str(mismatch)[:200]
+            notes.append("%s: claim dropped, nothing substantiated left in the pool"
+                         % it.get("id"))
     return notes

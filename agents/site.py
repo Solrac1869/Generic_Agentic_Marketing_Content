@@ -18,7 +18,7 @@ agent decide.
 
 import datetime, json, pathlib, re, urllib.request
 from collections import Counter
-from core import llm, qa_lint
+from core import llm, qa_lint, skills
 
 SYSTEM = """You audit B2B websites for content effectiveness and citability by
 AI assistants. You are concrete and prioritised: every recommendation names the
@@ -535,7 +535,7 @@ Be brief. No padding."""
 
     model = brand.get("budget", {}).get("model_smart", "claude-opus-5")
     text, _, usage = llm.call(prompt, model=model, budget=budget, agent="site",
-                              system=SYSTEM, max_tokens=6000)
+                              system=skills.augment(SYSTEM, "site"), max_tokens=6000)
 
     path = sdir / f"{today}.md"
     path.write_text(f"# Site audit, {brand.get('name')}, {today}\n\n"

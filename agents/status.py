@@ -17,8 +17,8 @@ import datetime, json, os, pathlib, re, subprocess
 
 
 # ── who notifications are to and from ───────────────────────────────
-# Thin wrappers over core.settings so the call sites read the way they did
-# before, and so there is exactly one place a brand's identity is resolved.
+# Thin wrappers over core.settings so the call sites read as they do upstream
+# and there is one place a brand's identity is resolved.
 
 def _recipient_name(brand=None):
     from core import settings
@@ -40,10 +40,29 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 # How long each agent may go between runs before it counts as stalled. Derived
 # from the cron schedule, with slack so a single missed run is not an alarm.
+#
+# Every agent needs an entry. Seven were missing and fell to the nine-day
+# default, which was wrong in both directions and went unnoticed because a
+# wrong window produces a plausible-looking line either way:
+#
+#   media and review run monthly, on the 2nd and the 1st. Nine days meant they
+#   reported "stalled" for roughly three weeks in every four. Two permanent
+#   false alarms in a daily report is how the whole report stops being read.
+#
+#   crm runs hourly. Nine days meant a genuine crm outage could sit unreported
+#   for over a week while the contact lifecycle silently stopped updating.
+#   That is the more expensive half of the same bug.
 MAX_QUIET_HOURS = {
+    # weekly
     "research": 24 * 9, "strategy": 24 * 9, "produce": 24 * 9,
     "blog": 24 * 9, "video": 24 * 9, "seo": 24 * 9,
-    "analyse": 24 * 9, "publish": 30, "engage": 30, "verify": 30, "site": 24 * 9,
+    "analyse": 24 * 9, "site": 24 * 9, "critic": 24 * 9,
+    "refresh": 24 * 9, "report": 24 * 9,
+    # daily or faster
+    "publish": 30, "engage": 30, "verify": 30, "status": 30,
+    "crm": 3,
+    # monthly, on the 1st and the 2nd: a full month plus slack for a missed run
+    "media": 24 * 40, "review": 24 * 40,
 }
 
 

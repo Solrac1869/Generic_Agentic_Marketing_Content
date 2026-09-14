@@ -18,7 +18,7 @@ Output: brands/<id>/analytics/YYYY-Www.md
 
 import csv, datetime, io, json, os, pathlib, re, subprocess
 from collections import Counter, defaultdict
-from core import llm, performance
+from core import llm, performance, skills
 
 SYSTEM = """You analyse marketing performance for a B2B brand. You are blunt
 about what did not work and you never inflate a small number into a trend. If
@@ -430,7 +430,7 @@ Be brief. Bad news first."""
 
     model = brand.get("budget", {}).get("model_smart", "claude-opus-5")
     text, _, usage = llm.call(prompt, model=model, budget=budget, agent="analyse",
-                              system=SYSTEM, max_tokens=4000)
+                              system=skills.augment(SYSTEM, "analyse"), max_tokens=4000)
 
     path = adir / f"{week}.md"
     path.write_text(

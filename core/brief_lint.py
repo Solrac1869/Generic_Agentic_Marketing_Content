@@ -61,7 +61,16 @@ def _sources(brand, items):
             continue
         mismatch = qa_lint.check_source_attribution(it)
         if mismatch:
-            out.append(_rec(it, "SOURCE_MISMATCH", WARN, "claims",
+            # FAIL, not WARN. A statistic credited to the wrong organisation
+            # is a factual error published under our name, and for a firm that
+            # sells judgement about AI it is the most expensive kind: the whole
+            # proposition is that we check things. This week's plan carried
+            # three -- a figure credited to PwC linking to Forbes, one credited
+            # to Gartner linking to beri.net, and one credited to IBM whose own
+            # text named Salesforce and whose link went to questa-ai.com. All
+            # three were scheduled, none had published, and every one of them
+            # had been visible as a warning nobody was shown.
+            out.append(_rec(it, "SOURCE_MISMATCH", FAIL, "claims",
                             mismatch.split(", cite")[0].replace("SOURCE_MISMATCH: ", "")))
     return out
 

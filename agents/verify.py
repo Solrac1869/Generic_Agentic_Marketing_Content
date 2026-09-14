@@ -24,8 +24,10 @@ status codes or logs. It checks the thing itself, and it is loud when it cannot.
 import collections
 import datetime
 import hashlib, json, os, pathlib, re, subprocess, urllib.request
+import time
 import urllib.error
 from core import weeks
+
 
 from core import settings as _s
 
@@ -33,12 +35,12 @@ from core import settings as _s
 def _own_domain(brand=None):
     """This brand's bare domain, for telling our links from other people's.
 
-    Empty when no site is configured, and every caller is written so that an
-    empty answer disables the check rather than matching everything. A link
-    check that cannot tell whose link it is should do nothing.
+    Empty when no site is configured, and every caller treats empty as "do not
+    check" rather than "matches everything".
     """
     site = _s.get(brand, "site", "")
     return str(site).split("//")[-1].strip("/").split("/")[0] if site else ""
+
 
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -229,15 +231,40 @@ def check_credentials():
     return out
 
 
-def _http(name, url, headers=None, data=None):
-    try:
-        req = urllib.request.Request(url, data=data, headers=headers or {},
-                                     method="POST" if data else "GET")
-        with urllib.request.urlopen(req, timeout=25) as r:
-            return _r(f"api:{name}", OK if r.status < 400 else FAIL, f"HTTP {r.status}")
-    except Exception as e:
-        code = getattr(e, "code", None)
-        return _r(f"api:{name}", FAIL, f"HTTP {code}" if code else f"{type(e).__name__}")
+def _http(name, url, headers=None, data=None, tries=3, pause=2):
+    """Is this API reachable? Answered on a few attempts, not one.
+
+    Brevo was reported as a hard FAIL on a single HTTP 500; three requests a
+    few hours later all returned 200. It was one blip in somebody else's
+    service, and the alert it produced sat in a daily email next to real
+    faults. An alert that fires on a single sample of a third party teaches
+    you to ignore alerts, which costs more than the blip.
+
+    A 4xx is not retried: 401 and 403 are answers about our credentials and
+    will say the same thing three times. Only 5xx, timeouts and connection
+    errors get another go.
+    """
+    last = None
+    for n in range(tries):
+        try:
+            req = urllib.request.Request(url, data=data, headers=headers or {},
+                                         method="POST" if data else "GET")
+            with urllib.request.urlopen(req, timeout=25) as r:
+                if r.status < 400:
+                    return _r(f"api:{name}", OK,
+                              f"HTTP {r.status}" + (f" (attempt {n+1})" if n else ""))
+                last = f"HTTP {r.status}"
+                if r.status < 500:
+                    break
+        except Exception as e:
+            code = getattr(e, "code", None)
+            last = f"HTTP {code}" if code else type(e).__name__
+            if code and 400 <= code < 500:
+                break
+        if n < tries - 1:
+            time.sleep(pause)
+    return _r(f"api:{name}", FAIL,
+              f"{last} (failed {tries} attempt(s))" if tries > 1 else str(last))
 
 
 # ─── 4. Does the config point at things that exist? ────────────────

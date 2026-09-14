@@ -34,12 +34,32 @@ import re
 import subprocess
 
 from core import llm, qa_lint, skills
-from core import settings as _settings
+
+
+from core import settings as _s
+
+
+
+# ── commit identity, from config rather than a person's name ────────
+
+def _identity():
+    from core import settings, orchestrator
+    try:
+        return settings.commit_identity(
+            orchestrator.load_brand(orchestrator.default_brand_id()))
+    except Exception:
+        return ("Content agent", "agent@localhost")
+
+
+_commit_name = _identity()[0]
+_commit_email = _identity()[1]
+
+
 
 
 # ── who notifications are to and from ───────────────────────────────
-# Thin wrappers over core.settings so the call sites read the way they did
-# before, and so there is exactly one place a brand's identity is resolved.
+# Thin wrappers over core.settings so the call sites read as they do upstream
+# and there is one place a brand's identity is resolved.
 
 def _recipient_name(brand=None):
     from core import settings
@@ -390,7 +410,8 @@ def run(brand, budget, dry_run=False, from_raw=False, mode=None, **kw):
                 to, _recipient_name(brand),
                 (f"Page edit applied: {c['target']['query']}" if pid in applied_ids
                  else f"Page edit proposed: {c['target']['query']}"), body,
-                sender=_sender(brand),
+                sender={"name": "ARP agents",
+                        "email": _sender_email(brand)},
                 reply_to=(lc.get("sender") or {}).get("reply_to"))
             print(f"  emailed proposal {pid} to {to}" if not _e
                   else f"  WARNING: proposal email failed: {_e}")
@@ -438,8 +459,7 @@ def run(brand, budget, dry_run=False, from_raw=False, mode=None, **kw):
                 if pid in applied_ids else
                 "This edits a live page, so nothing happens unless you say so.\n"
                 "Approve or discard it on the board:\n"
-                "  " + (_settings.board_url(brand) + "/review"
-                        if _settings.board_url(brand) else "(no board configured)")
+                "  " + (_s.board_url(brand) + "/review" if _s.board_url(brand)                        else "(no board configured)")
             )
             notify(
                 f"REFRESH PROPOSAL\n{c['page']}\n\n"
@@ -534,10 +554,8 @@ def _apply_ids(brand, pdir, dry_run, approved):
                 print("  nothing to commit, the file already matched")
                 return f"applied {len(done)}, no change to commit"
             subprocess.run(
-                ["git", "-C", str(repo),
-                 "-c", "user.email=%s" % _settings.commit_identity(brand)[1],
-                 "-c", "user.name=%s" % _settings.commit_identity(brand)[0],
-                 "commit", "-m",
+                ["git", "-C", str(repo), "-c", "user.email=%s" % _commit_email,
+                 "-c", "user.name=%s" % _commit_name, "commit", "-m",
                  "refresh: improve " + ", ".join(done), "--"] + changed_files,
                 check=True, timeout=60)
             subprocess.run(["git", "-C", str(repo), "push"], check=True, timeout=180)
