@@ -33,7 +33,7 @@ import pathlib
 import re
 import subprocess
 
-from core import llm, qa_lint
+from core import llm, qa_lint, skills
 from core import settings as _settings
 
 
@@ -295,7 +295,7 @@ Return JSON:
 
     model = brand.get("budget", {}).get("model_smart", "claude-opus-5")
     text, _, _usage = llm.call(prompt, model=model, budget=budget,
-                               agent="refresh", system=SYSTEM,
+                               agent="refresh", system=skills.augment(SYSTEM, "refresh"),
                                max_tokens=16000, thinking=False)
     got = llm.extract_json(text) or {}
     new_body = (got.get("body") or "").strip()

@@ -10,7 +10,7 @@ Output: brands/<id>/research/YYYY-Www.md
 """
 
 import datetime, json, pathlib
-from core import weeks
+from core import weeks, skills
 from core import llm
 
 SYSTEM = """You are a market research analyst for a B2B brand. You produce
@@ -152,7 +152,8 @@ def run(brand, budget, dry_run=False):
 
     text, citations, usage = llm.call(
         prompt, model=model, budget=budget, agent="research",
-        system=SYSTEM, max_tokens=16000, web_search=True, max_searches=8,
+        system=skills.augment(SYSTEM, "research"),
+        max_tokens=16000, web_search=True, max_searches=8,
     )
 
     header = (f"# Research, {brand.get('name')}, {week}\n\n"

@@ -12,7 +12,7 @@ exception and are held as `pending_approval` until confirmed.
 """
 
 import datetime, json, pathlib, re
-from core import claims, weeks
+from core import claims, weeks, skills
 from core import llm
 
 # Item shape asked of the model. "time" lets the strategist choose the posting
@@ -556,7 +556,8 @@ def _plan_items(brand, budget, model, week, bdir, research, analytics,
         bp = _prompt(brand, research, analytics, week, seo_brief,
                      only_channels=batch, bet=bet, id_start=next_id)
         text, _, u = llm.call(bp, model=model, budget=budget, agent="strategy",
-                              system=SYSTEM, max_tokens=24000, thinking=False)
+                              system=skills.augment(SYSTEM, "strategy"),
+                              max_tokens=24000, thinking=False)
         (raw_dir / f"strategy-{week}-b{n}.txt").write_text(text)
         for k in ("cost_usd", "in", "out"):
             usage[k] = usage.get(k, 0) + u.get(k, 0)

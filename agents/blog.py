@@ -15,7 +15,7 @@ which is what makes an automated writer safe to run against a live site.
 """
 
 import datetime, json, os, pathlib, re, shutil, subprocess
-from core import weeks
+from core import weeks, skills
 from core import llm, qa_lint, hero_image, utm
 
 # Two goes at an article, then the queue moves on. The third attempt has never
@@ -576,7 +576,8 @@ def run(brand, budget, dry_run=False, from_raw=False, mode=None, **kw):
         print(f"writing article for {week} with {model} (from {rpath.name})"
               + (f", attempt {_n} of {MAX_ATTEMPTS}" if _n else "") + "...")
         text, _, usage = llm.call(prompt, model=model, budget=budget, agent="blog",
-                                  system=SYSTEM, max_tokens=16000, thinking=False)
+                                  system=skills.augment(SYSTEM, "blog"),
+                                  max_tokens=16000, thinking=False)
         raw_path.write_text(text)
 
     art = llm.extract_json(text)

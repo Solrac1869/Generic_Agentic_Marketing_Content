@@ -20,7 +20,7 @@ Design decisions worth knowing:
 
 import datetime
 import re, json, pathlib
-from core import weeks
+from core import weeks, skills
 from core import hero_image, llm, qa_lint, utm
 
 SYSTEM = """You write for a specific B2B brand. You follow its voice rules
@@ -331,7 +331,8 @@ ITEMS:
     else:
         max_tok = PER_ITEM_TOKENS.get(channel, 1200) * len(items) + 800
         text, _, usage = llm.call(prompt, model=model, budget=budget,
-                                  agent=f"produce:{channel}", system=SYSTEM,
+                                  agent=f"produce:{channel}",
+                                  system=skills.augment(SYSTEM, f"produce:{channel}"),
                                   max_tokens=min(max_tok, 32000),
                                   thinking=False)   # drafting needs no reasoning budget
         print(f"  {channel}: {len(items)} item(s) via {model}, ${usage['cost_usd']:.3f}")

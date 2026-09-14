@@ -56,7 +56,14 @@ def call(prompt, *, model, budget=None, agent="unknown", system=None,
         "messages": [{"role": "user", "content": prompt}],
     }
     if system:
-        payload["system"] = system
+        # Sent as a cacheable block rather than a bare string. Once skills are
+        # added the system prompt carries tens of kilobytes that are identical
+        # across every call an agent makes, and paying full input price for
+        # that each time would be the whole cost of the feature. A short
+        # prompt falls under the minimum cacheable length and the marker is
+        # ignored, so this is safe with no skills configured.
+        payload["system"] = [{"type": "text", "text": system,
+                              "cache_control": {"type": "ephemeral"}}]
     # Extended thinking can consume the whole max_tokens budget before any text
     # is produced, which silently returned empty drafts. Explicit beats default.
     if thinking is False:
@@ -119,7 +126,16 @@ def call(prompt, *, model, budget=None, agent="unknown", system=None,
               f"stop_reason={data.get('stop_reason')})")
 
     usage = data.get("usage", {})
+    # Cached input is reported in its own fields, not folded into
+    # input_tokens. Counting only input_tokens would make the daily budget
+    # under-count from the moment caching is on, and a budget that stops
+    # enforcing exactly when spend rises is worse than no budget. Converted to
+    # base-rate equivalents (a write costs 1.25x, a read 0.1x) so that
+    # Budget.record needs no knowledge of caching.
+    cache_write = usage.get("cache_creation_input_tokens", 0)
+    cache_read = usage.get("cache_read_input_tokens", 0)
     in_tok = usage.get("input_tokens", 0)
+    in_tok = int(in_tok + cache_write * 1.25 + cache_read * 0.1)
     out_tok = usage.get("output_tokens", 0)
     cost = budget.record(agent, model, in_tok, out_tok) if budget is not None else 0.0
 

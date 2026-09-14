@@ -16,7 +16,7 @@ more reputation than it earns.
 """
 
 import datetime, html, json, os, pathlib, re
-from core import llm, qa_lint
+from core import llm, qa_lint, skills
 from core.x_client import client as x_client, me as x_me, XConfigError
 
 
@@ -191,7 +191,8 @@ Return one JSON object and nothing else:
   "reason": "one short line on why you replied or skipped"}}"""
     text, _, usage = llm.call(prompt, model=brand.get("budget", {}).get("model_cheap",
                                                                        "claude-haiku-4-5-20251001"),
-                              budget=budget, agent="engage", system=SYSTEM,
+                              budget=budget, agent="engage",
+                              system=skills.augment(SYSTEM, "engage"),
                               max_tokens=600, thinking=False)
     parsed = llm.extract_json(text)
     if parsed is None:
