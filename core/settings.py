@@ -104,6 +104,32 @@ def notify_from(brand):
             get(brand, "notify.from_email"))
 
 
+def recipient_name(brand=None):
+    """Who the notification emails greet.
+
+    Empty is fine and common: a person setting this up for themselves does not
+    need to be addressed by name, and an email that opens "Hi," beats one that
+    opens with somebody else's name.
+    """
+    return get(brand, "notify.to_name", "")
+
+
+def sender_email(brand=None):
+    """The From address on notifications.
+
+    No default. A wrong From address is the failure that looks like it worked:
+    the send succeeds, the mail is silently dropped by SPF, and nobody finds
+    out until a week of alerts has gone missing.
+    """
+    return get(brand, "notify.from_email", "")
+
+
+def sender(brand=None):
+    """The From block Brevo wants, built from the two settings above."""
+    name, email = notify_from(brand)
+    return {"name": name, "email": email or ""}
+
+
 def commit_identity(brand):
     """Who commits to the site repo. Defaults are neutral, not personal."""
     ch = get(brand, "channels.blog", {}) or {}

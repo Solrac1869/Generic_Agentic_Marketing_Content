@@ -15,6 +15,24 @@ Needs rsvg-convert and cwebp, both small.
 
 import pathlib, re, subprocess, tempfile
 
+
+def _wordmark(brand=None):
+    """The small text drawn in the corner of a rendered image.
+
+    A brand can set this explicitly; most will want their bare domain, which
+    is what a reader recognises at thumbnail size. Empty draws nothing, and
+    drawing nothing is correct: a blank corner is unremarkable, somebody
+    else's domain on your image is not.
+    """
+    from core import settings
+    explicit = settings.get(brand, "wordmark")
+    if explicit:
+        return str(explicit)
+    site = settings.get(brand, "site", "")
+    return str(site).split("//")[-1].strip("/") if site else ""
+
+
+
 # The palette lives in brand.yaml under art_direction, so the video renderer
 # and anything added later share it. These literals remain as a fallback: a
 # missing config key must not stop an image being made.
@@ -216,7 +234,7 @@ def social_card(text, slug, out_path, kicker="AI READINESS PARTNER"):
   <rect x="70" y="96" width="64" height="2" fill="{GOLD}"/>
   {body_svg}
   <text x="70" y="{SOCIAL_H - 52}" font-family="{SANS}" font-size="19"
-        fill="{CREAM}" opacity="0.66">aireadinesspartner.com</text>
+        fill="{CREAM}" opacity="0.66">{_wordmark(brand)}</text>
   <rect x="0" y="{SOCIAL_H-7}" width="{SOCIAL_W}" height="7" fill="{GOLD}" opacity="0.85"/>
 </svg>'''
 

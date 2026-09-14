@@ -27,6 +27,20 @@ import hashlib, json, os, pathlib, re, subprocess, urllib.request
 import urllib.error
 from core import weeks
 
+from core import settings as _s
+
+
+def _own_domain(brand=None):
+    """This brand's bare domain, for telling our links from other people's.
+
+    Empty when no site is configured, and every caller is written so that an
+    empty answer disables the check rather than matching everything. A link
+    check that cannot tell whose link it is should do nothing.
+    """
+    site = _s.get(brand, "site", "")
+    return str(site).split("//")[-1].strip("/").split("/")[0] if site else ""
+
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OK, WARN, FAIL = "ok", "warn", "FAIL"
 
@@ -592,7 +606,7 @@ def check_published_output(brand):
             bad += 1
             offenders.append("%s (%s)" % (iid, fails[0].split(":")[0]))
         for url in re.findall(r"https?://[^\s\)]+", body):
-            if "aireadinesspartner.com" in url:
+            if _own_domain(brand) and _own_domain(brand) in url:
                 links += 1
                 if "utm_" not in url:
                     untagged += 1
@@ -1085,7 +1099,9 @@ def check_email_render(brand):
         except (ValueError, OSError):
             continue
         for para in d.get("body", "").split("\n\n"):
-            if "\n" in para.strip() and not para.strip().startswith("Carl Chessum"):
+            _byline = _s.author(brand) or ""
+        if "\n" in para.strip() and not (
+                _byline and para.strip().startswith(_byline)):
                 broken.append(f.stem)
                 break
     out.append(_r("email:sequence_copy", FAIL if broken else OK,

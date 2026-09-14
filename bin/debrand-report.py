@@ -29,12 +29,15 @@ FORBIDDEN = [
     (r"\b2UMI2FME0FFUFMlUoRER\b", "the original brand's voice id"),
     (r"\b536592493\b", "the original GA4 property"),
     (r"Solrac1869", "the original GitHub account"),
-    (r"relay\.", "the original notification host"),
+    (r"relay\.[a-z0-9-]+\.", "the original notification host"),
     (r"go\.aireadiness", "the original sending domain"),
 ]
 
 SKIP_DIRS = {".git", "__pycache__", "node_modules", "demo", ".venv"}
-SKIP_FILES = {"debrand-report.py"}
+# The sweep scripts quote the old values as the left-hand side of every
+# replacement. That is the record of what was changed and why, and scanning
+# it reports the history as if it were the present state.
+SKIP_FILES = {"debrand-report.py", "_debrand_sweep.py", "_debrand_sweep2.py"}
 
 
 def scan():

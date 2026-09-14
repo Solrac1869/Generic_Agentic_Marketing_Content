@@ -256,7 +256,7 @@ def _ensure_repo(brand, reset=True):
     once landed.
     """
     cfg = brand.get("channels", {}).get("blog", {})
-    repo = pathlib.Path(cfg.get("droplet_repo", "/root/airp-website"))
+    repo = pathlib.Path(cfg.get("working_copy") or cfg.get("droplet_repo") or "")
     if not (repo / ".git").exists():
         return None, f"no clone at {repo}"
     if reset:
@@ -290,7 +290,7 @@ def apply_inbound_links(brand, suggestions, new_slug, new_title):
     be there. A link forced in reads as SEO and puts readers off.
     """
     cfg = brand.get("channels", {}).get("blog", {})
-    repo = pathlib.Path(cfg.get("droplet_repo", "/root/airp-website"))
+    repo = pathlib.Path(cfg.get("working_copy") or cfg.get("droplet_repo") or "")
     cdir = repo / cfg.get("content_dir", "src/content/blog")
     if not cdir.exists():
         return [], "no content directory"

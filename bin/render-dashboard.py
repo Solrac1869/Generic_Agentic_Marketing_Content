@@ -90,7 +90,7 @@ def waiting_on_you():
     try:
         from agents import status
         from core import orchestrator
-        brand = orchestrator.load_brand("arp")
+        brand = orchestrator.load_brand(orchestrator.default_brand_id())
         _w, _s, waiting, _o = status.gather(brand)
     except BaseException as e:
         return ('<section><h2>Waiting on you</h2><p class="gap">'
@@ -285,7 +285,7 @@ def health():
 def gate():
     try:
         from core import brief_lint, orchestrator
-        brand = orchestrator.load_brand("arp")
+        brand = orchestrator.load_brand(orchestrator.default_brand_id())
         recs = brief_lint.lint(brand, items)
     except BaseException as e:
         return section("Gate 1, the brief",
@@ -664,7 +664,7 @@ n_claims = len([c for c in claims_pool.values()
 try:
     from agents import status as _status
     from core import orchestrator as _orch
-    _wait_items = _status.gather(_orch.load_brand("arp"))[2]
+    _wait_items = _status.gather(_orch.load_brand(_orch.default_brand_id()))[2]
 except BaseException:
     _wait_items = []
 n_wait = len(_wait_items)

@@ -13,10 +13,11 @@ here can write to the revenue host.
 Line format is "<epoch> <text>", so a reply of any length survives as one line.
 """
 
+import os
 import subprocess
 
 KEY = "/root/.ssh/id_status_reader"
-HOST = "root@161.35.74.240"
+HOST = os.environ.get("INBOX_HOST", "")  # optional second host
 
 
 def read_lines(key=KEY, host=HOST, timeout=60):

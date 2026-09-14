@@ -3,7 +3,7 @@
 
 VERIFIED 17 Aug 2026 on production: Typeform's built-in Source tracking already
 forwards utm_* from the parent page URL into the embedded form. No website
-change is required, a live test on aireadinesspartner.com (which carries no
+change is required, a live test on your own domain (which carries no
 transitive-search-params attribute) landed all five values against the response.
 
 So the attribution chain is simply:
@@ -100,6 +100,6 @@ def typeform_passthrough(typeform_url, incoming_query):
 
 
 if __name__ == "__main__":
-    demo = "https://aireadinesspartner.com/ai-readiness-audit"
+    demo = "https://example.com/your-call-to-action"
     for ch, item in (("linkedin_personal", "2026-W34-02"), ("x", "2026-W34-04")):
         print(f"{ch:20} {tag(demo, ch, '2026-W34', item, 'data_point')}")

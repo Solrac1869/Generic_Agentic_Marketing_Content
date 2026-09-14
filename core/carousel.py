@@ -23,6 +23,24 @@ import tempfile
 
 from core.hero_image import palette
 
+
+def _wordmark(brand=None):
+    """The small text drawn in the corner of a rendered image.
+
+    A brand can set this explicitly; most will want their bare domain, which
+    is what a reader recognises at thumbnail size. Empty draws nothing, and
+    drawing nothing is correct: a blank corner is unremarkable, somebody
+    else's domain on your image is not.
+    """
+    from core import settings
+    explicit = settings.get(brand, "wordmark")
+    if explicit:
+        return str(explicit)
+    site = settings.get(brand, "site", "")
+    return str(site).split("//")[-1].strip("/") if site else ""
+
+
+
 # 4:5. LinkedIn shows documents in a square-ish frame but 4:5 claims more
 # vertical space in the feed than 1:1, and the extra height is what lets a
 # slide carry a full sentence at a readable size.
@@ -136,7 +154,7 @@ def _slide_svg(text, n, total, brand, kicker=""):
         out.append(
             f'<text x="{W - MARGIN}" y="{H - MARGIN}" text-anchor="end" '
             f'font-family="{SANS}" font-size="24" fill="{ink}" '
-            f'opacity="0.55">aireadinesspartner.com</text>')
+            f'opacity="0.55">{_esc(_wordmark(brand))}</text>')
 
     out.append("</svg>")
     return "\n".join(out)

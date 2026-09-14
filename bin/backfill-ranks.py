@@ -44,7 +44,9 @@ def main():
     brand = load_brand(a.brand)
     site = (brand.get("site") or brand.get("url") or "").rstrip("/")
     if not site:
-        site = "https://aireadinesspartner.com"
+        site = os.environ.get("SITE_URL", "")
+    if not site:
+        raise SystemExit("SITE_URL is not set")
     props = [a.property] if a.property else [
         f"sc-domain:{site.replace('https://', '').replace('http://', '')}",
         site + "/",

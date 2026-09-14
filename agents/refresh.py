@@ -34,6 +34,28 @@ import re
 import subprocess
 
 from core import llm, qa_lint
+from core import settings as _settings
+
+
+# ── who notifications are to and from ───────────────────────────────
+# Thin wrappers over core.settings so the call sites read the way they did
+# before, and so there is exactly one place a brand's identity is resolved.
+
+def _recipient_name(brand=None):
+    from core import settings
+    return settings.recipient_name(brand)
+
+
+def _sender(brand=None):
+    from core import settings
+    return settings.sender(brand)
+
+
+def _sender_email(brand=None):
+    from core import settings
+    return settings.sender_email(brand)
+
+
 
 MAX_PAGES_PER_RUN = 2
 PROPOSAL_DIR = "refresh"
@@ -191,7 +213,8 @@ def candidates(brand, limit=MAX_PAGES_PER_RUN):
     from agents.seo import fetch_ranks, prioritise, _difficulty_cache
     from core import performance
 
-    site = (brand.get("site") or "https://aireadinesspartner.com").rstrip("/")
+    from core import settings
+    site = settings.site(brand)   # raises if unset, never defaults
     prop = f"sc-domain:{site.replace('https://', '').replace('http://', '')}"
     rows, err = fetch_ranks(prop, days=28, limit=500)
     if err or not rows:
@@ -356,7 +379,7 @@ def run(brand, budget, dry_run=False, from_raw=False, mode=None, **kw):
     except Exception:
         lc = {}
     to = (lc.get("digest_to") or (lc.get("sender") or {}).get("reply_to")
-          or "carl.chessum@aireadinesspartner.com")
+          or "")
     for pid, c, reason, diff in offered:
         body = proposal_html(pid, c["page"], c["target"]["query"],
                              c["target"]["position"], c["target"]["impressions"],
@@ -364,11 +387,10 @@ def run(brand, budget, dry_run=False, from_raw=False, mode=None, **kw):
         try:
             from core import brevo
             _m, _e = brevo.send_transactional(
-                to, "Carl Chessum",
+                to, _recipient_name(brand),
                 (f"Page edit applied: {c['target']['query']}" if pid in applied_ids
                  else f"Page edit proposed: {c['target']['query']}"), body,
-                sender={"name": "ARP agents",
-                        "email": "hello@go.aireadinesspartner.com"},
+                sender=_sender(brand),
                 reply_to=(lc.get("sender") or {}).get("reply_to"))
             print(f"  emailed proposal {pid} to {to}" if not _e
                   else f"  WARNING: proposal email failed: {_e}")
@@ -411,12 +433,13 @@ def run(brand, budget, dry_run=False, from_raw=False, mode=None, **kw):
             # week while the dashboard said they were waiting on a person.
             tail = (
                 "Applied and pushed. It is in git, so to undo it:\n"
-                "  cd /root/airp-website && git revert --no-edit HEAD\n"
+                "  cd <your site repo> && git revert --no-edit HEAD\n"
                 "verify watches the position from here."
                 if pid in applied_ids else
                 "This edits a live page, so nothing happens unless you say so.\n"
                 "Approve or discard it on the board:\n"
-                "  https://relay.aireadinesspartner.com/dashboard/review"
+                "  " + (_settings.board_url(brand) + "/review"
+                        if _settings.board_url(brand) else "(no board configured)")
             )
             notify(
                 f"REFRESH PROPOSAL\n{c['page']}\n\n"
@@ -511,8 +534,10 @@ def _apply_ids(brand, pdir, dry_run, approved):
                 print("  nothing to commit, the file already matched")
                 return f"applied {len(done)}, no change to commit"
             subprocess.run(
-                ["git", "-C", str(repo), "-c", "user.email=carl.chessum@aireadinesspartner.com",
-                 "-c", "user.name=Carl Chessum", "commit", "-m",
+                ["git", "-C", str(repo),
+                 "-c", "user.email=%s" % _settings.commit_identity(brand)[1],
+                 "-c", "user.name=%s" % _settings.commit_identity(brand)[0],
+                 "commit", "-m",
                  "refresh: improve " + ", ".join(done), "--"] + changed_files,
                 check=True, timeout=60)
             subprocess.run(["git", "-C", str(repo), "push"], check=True, timeout=180)

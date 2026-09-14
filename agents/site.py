@@ -146,7 +146,7 @@ def _keywords(bdir, limit=16):
 
 def _site_repo(brand):
     cfg = brand.get("channels", {}).get("blog", {})
-    repo = pathlib.Path(cfg.get("droplet_repo", "/root/airp-website"))
+    repo = pathlib.Path(cfg.get("working_copy") or cfg.get("droplet_repo") or "")
     return repo if (repo / ".git").exists() else None
 
 

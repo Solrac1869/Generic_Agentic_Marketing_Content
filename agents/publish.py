@@ -27,6 +27,27 @@ for six weeks without anyone noticing.
 
 import datetime, json, os, pathlib, re, subprocess, urllib.error, urllib.parse, urllib.request
 
+
+# ── who notifications are to and from ───────────────────────────────
+# Thin wrappers over core.settings so the call sites read the way they did
+# before, and so there is exactly one place a brand's identity is resolved.
+
+def _recipient_name(brand=None):
+    from core import settings
+    return settings.recipient_name(brand)
+
+
+def _sender(brand=None):
+    from core import settings
+    return settings.sender(brand)
+
+
+def _sender_email(brand=None):
+    from core import settings
+    return settings.sender_email(brand)
+
+
+
 STATE_NAME = "publish-state.json"
 
 
@@ -44,7 +65,11 @@ def _tg(method, payload=None):
         return json.loads(r.read().decode())
 
 
-BOARD_URL = "https://relay.aireadinesspartner.com/dashboard/"
+# Where a person goes to approve things. Empty when there is no board,
+# and the emails then simply omit the link rather than offering a dead one.
+def _board_url(brand=None):
+    from core import settings
+    return settings.board_url(brand or {})
 
 
 def _operator_email():
@@ -52,12 +77,12 @@ def _operator_email():
     try:
         from agents.crm import lifecycle
         from core import orchestrator
-        lc = lifecycle(orchestrator.load_brand("arp")) or {}
+        lc = lifecycle(orchestrator.load_brand(orchestrator.default_brand_id())) or {}
         return (lc.get("digest_to")
                 or (lc.get("sender") or {}).get("reply_to")
-                or "carl.chessum@aireadinesspartner.com")
+                or "")
     except Exception:
-        return "carl.chessum@aireadinesspartner.com"
+        return ""
 
 
 def notify(text, subject=None):
@@ -70,22 +95,23 @@ def notify(text, subject=None):
     always did; only the destination changed, and every message now carries the
     link to the page where the thing can actually be done.
     """
-    head = str(text or "").strip().split("\n", 1)[0][:70] or "ARP agents"
+    head = str(text or "").strip().split("\n", 1)[0][:70] or "Content agents"
     body = ('<div style="max-width:640px;margin:0 auto;padding:24px;'
             'font:400 15px/1.6 -apple-system,Segoe UI,Helvetica,Arial,sans-serif;'
             'background:#1a2730;color:#f0ece4">'
             '<pre style="white-space:pre-wrap;font:inherit;margin:0 0 20px">'
             + str(text).replace("&", "&amp;").replace("<", "&lt;")
             + '</pre>'
-            '<a href="' + BOARD_URL + '" style="display:inline-block;'
-            'background:#947f5b;color:#12181c;font-weight:500;text-decoration:none;'
-            'padding:11px 20px;border-radius:3px">Open the board</a></div>')
+            + ('<a href="' + _board_url() + '" style="display:inline-block;'
+               'background:#947f5b;color:#12181c;font-weight:500;text-decoration:none;'
+               'padding:11px 20px;border-radius:3px">Open the board</a>'
+               if _board_url() else '')
+            + '</div>')
     try:
         from core import brevo
         _mid, err = brevo.send_transactional(
-            _operator_email(), "Carl Chessum", subject or ("ARP: " + head), body,
-            sender={"name": "ARP agents", "email": "hello@go.aireadinesspartner.com"},
-            reply_to="carl.chessum@aireadinesspartner.com")
+            _operator_email(), _recipient_name(), subject or head, body,
+            sender=_sender(), reply_to=_operator_email())
         if err:
             print(f"  WARNING: notify email failed: {err}")
         return not err

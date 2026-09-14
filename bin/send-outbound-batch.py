@@ -17,7 +17,7 @@ Three things here exist because sent email cannot be recalled:
   rather than after eight of them have.
 
   Reply-to is a mailbox that actually receives mail. The sending subdomain
-  go.aireadinesspartner.com has no MX record, so the opt-out this email
+  A subdomain sender often has no MX record, so the opt-out this email
   promises would have bounced back at the person trying to use it.
 """
 import argparse
@@ -40,18 +40,20 @@ OUT = ROOT / "brands/arp/outbound"
 BATCH = OUT / "batch-2026-09-01.json"
 LEDGER = OUT / "batch-2026-09-01.ledger.jsonl"
 
-SENDER = {"name": "Carl Chessum", "email": "hello@go.aireadinesspartner.com"}
+SENDER = {"name": os.environ.get("SENDER_NAME", ""),
+          "email": os.environ.get("SENDER_EMAIL", "")}
 # Not the sending subdomain: it has no MX, so replies to it bounce.
-REPLY_TO = {"name": "Carl Chessum", "email": "carl.chessum@aireadinesspartner.com"}
+REPLY_TO = {"name": os.environ.get("REPLY_TO_NAME", "") or SENDER["name"],
+            "email": os.environ.get("REPLY_TO_EMAIL", "")}
 
 # Deliberately excluded. The skip flag in the roster is one JSON key away from
 # a typo that would silently re-admit them, and this send was a decision.
 NEVER_MAIL = {"andrew.waugh@satalia.com"}
 
 SLATE, GOLD = "#1a2730", "#947f5b"
-LOGO = "https://aireadinesspartner.com/images/airp-logo.png"
-AUDIT_URL = "https://aireadinesspartner.com/ai-readiness-audit"
-HOME_URL = "https://aireadinesspartner.com/"
+LOGO = os.environ.get("LOGO_URL", "")
+AUDIT_URL = os.environ.get("PRIMARY_CTA_URL", "")
+HOME_URL = os.environ.get("SITE_URL", "")
 
 # Campaign tagging. Without this the channel cannot be measured at all: GA4
 # attributes a visit to whatever it can see, and a bare URL is direct traffic
@@ -147,7 +149,7 @@ def render(first, company):
         "do with it is your business.",
 
         # The one deliberate line break in the message.
-        "Carl Chessum\nAI Readiness Partner",
+        SENDER["name"] + "\n" + os.environ.get("BRAND_NAME", ""),
 
         "You are receiving this because your public professional profile "
         "matched senior technology and operations leadership in the UK. Reply "
@@ -230,7 +232,7 @@ def send(to, name, subject, paragraphs):
         },
     }
     req = urllib.request.Request(
-        "https://relay.aireadinesspartner.com/", data=json.dumps(payload).encode(),
+        os.environ.get("RELAY_URL", ""), data=json.dumps(payload).encode(),
         method="POST",
         headers={"Content-Type": "application/json",
                  "X-Relay-Secret": os.environ["RELAY_SECRET"],

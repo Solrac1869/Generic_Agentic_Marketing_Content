@@ -17,9 +17,9 @@ os.chdir("/root/marketing-agents")
 sys.path.insert(0, "/root/marketing-agents")
 
 from core import qa_lint, performance
-from core.orchestrator import load_brand
+from core.orchestrator import default_brand_id, load_brand
 
-brand = load_brand("arp")
+brand = load_brand(default_brand_id())
 
 # The heading changed when the dash rule was applied to the codebase, so an
 # older week says "HELD \u2014 QA failures" and a newer one says "HELD, QA

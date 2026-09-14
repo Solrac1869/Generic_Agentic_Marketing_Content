@@ -15,6 +15,27 @@ Runs on a schedule and on demand: `--mode ask` answers a Telegram message.
 
 import datetime, json, os, pathlib, re, subprocess
 
+
+# ── who notifications are to and from ───────────────────────────────
+# Thin wrappers over core.settings so the call sites read the way they did
+# before, and so there is exactly one place a brand's identity is resolved.
+
+def _recipient_name(brand=None):
+    from core import settings
+    return settings.recipient_name(brand)
+
+
+def _sender(brand=None):
+    from core import settings
+    return settings.sender(brand)
+
+
+def _sender_email(brand=None):
+    from core import settings
+    return settings.sender_email(brand)
+
+
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 # How long each agent may go between runs before it counts as stalled. Derived
@@ -372,7 +393,7 @@ def run(brand, budget, dry_run=False, from_raw=False, mode=None, **kw):
         except Exception:
             lc = {}
         to = (lc.get("digest_to") or (lc.get("sender") or {}).get("reply_to")
-              or "carl.chessum@aireadinesspartner.com")
+              or "")
         head = "Waiting on you" if waiting else ("Stalled" if stalled else "Daily report")
         body = ("<div style=\"max-width:640px;margin:0 auto;padding:24px;"
                 "font:400 14px/1.6 -apple-system,Segoe UI,Helvetica,Arial,sans-serif;"
@@ -386,9 +407,9 @@ def run(brand, budget, dry_run=False, from_raw=False, mode=None, **kw):
             subject = (f"ARP: {n} thing(s) waiting on you" if waiting
                        else f"ARP: {len(stalled)} stalled")
             _mid, _err = brevo.send_transactional(
-                to, "Carl Chessum", subject, body,
+                to, _recipient_name(brand), subject, body,
                 sender={"name": "ARP agents",
-                        "email": "hello@go.aireadinesspartner.com"},
+                        "email": _sender_email(brand)},
                 reply_to=(lc.get("sender") or {}).get("reply_to"))
             if _err:
                 print(f"  WARNING: status email failed: {_err}")
@@ -418,7 +439,7 @@ LISTEN_STATE = "status-listen.json"
 
 
 def _read_requests(key="/root/.ssh/id_status_reader",
-                   host="root@161.35.74.240"):
+                   host=None):
     """Status requests recorded by the audit product's Telegram webhook.
 
     That webhook owns the Telegram connection, so this system cannot poll for

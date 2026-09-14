@@ -10,7 +10,10 @@ set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
 ENV_FILE=/etc/marketing-agents.env
-DROPLET=root@165.245.252.73
+# Only used by the fallback that fetches credentials over ssh when this
+# is run from a workstation. On the server itself the env file is local
+# and this is never touched.
+DROPLET="${AGENT_HOST:-}"
 LOG="$(pwd)/state/agent.log"
 mkdir -p "$(dirname "$LOG")"
 

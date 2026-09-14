@@ -9,12 +9,15 @@ already there; nothing on this side was reading it.
 Read only, over a restricted key. This host never writes to the audit host.
 """
 
+import os
 import csv
 import io
 import subprocess
 
 KEY = "/root/.ssh/id_leads_reader"
-HOST = "root@161.35.74.240"
+# A separate box for CRM data. Most setups have none: empty means the
+# feature is simply off rather than pointing at a stranger's server.
+HOST = os.environ.get("LEADS_HOST", "")
 PATH = "/root/ai-readiness-audit/leads.csv"
 
 PILLARS = ("Data", "Process", "People", "Technology", "Strategy", "Governance")

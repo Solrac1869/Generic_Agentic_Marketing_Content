@@ -40,6 +40,36 @@ def load_env():
             pass  # running unprivileged; key may come from the environment
 
 
+def default_brand_id():
+    """The brand to use when the caller did not name one.
+
+    A notification helper has no brand in hand and should not need one. The
+    original system hardcoded its own slug here, which is exactly the kind of
+    default that works perfectly for one installation and silently loads the
+    wrong config for every other.
+
+    Resolution order: the DEFAULT_BRAND environment variable, then the only
+    brand directory if there is exactly one, then nothing. Two brands and no
+    variable is genuinely ambiguous, so it raises rather than picking.
+    """
+    import os
+    named = os.environ.get("DEFAULT_BRAND")
+    if named:
+        return named
+    d = ROOT / "brands"
+    dirs = sorted(x.name for x in d.glob("*") if (x / "brand.yaml").exists()) \
+        if d.exists() else []
+    if len(dirs) == 1:
+        return dirs[0]
+    if not dirs:
+        raise RuntimeError(
+            "No brand is configured. Copy config/brand.example.yaml to "
+            "brands/<your-brand>/brand.yaml, or run: python3 setup.py")
+    raise RuntimeError(
+        "More than one brand is configured (%s). Set DEFAULT_BRAND to say "
+        "which one unattended jobs should use." % ", ".join(dirs))
+
+
 def load_brand(brand_id):
     """The brand config, merged from both tiers into one dict.
 

@@ -64,8 +64,11 @@ def _duration_value(token):
     token = token.lower()
     return int(token) if token.isdigit() else WORD_NUMBERS.get(token)
 
-CORRECT_CONTACT_CTA = "https://aireadinesspartner.com/contact-us"
-CONTACT_CTA_WRONG = re.compile(r"aireadinesspartner\.com/contact(?!-us)\b", re.I)
+# A brand can declare the canonical form of a URL its copy keeps getting
+# wrong. Empty disables the rule, which is the right default: a rule
+# about somebody else's URL structure fires on nothing and confuses.
+CORRECT_CONTACT_CTA = ""
+CONTACT_CTA_WRONG = None
 
 CARL_NAMES = re.compile(r"\bcarl\b|\bchessum\b", re.I)
 

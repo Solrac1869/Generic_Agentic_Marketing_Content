@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """brevo.py, direct Brevo API access from the marketing droplet.
 
-Not the relay. The relay at relay.aireadinesspartner.com exists for one caller:
+Not the relay. A relay host, where one is configured, exists for one caller:
 the Vercel website, whose serverless functions get a fresh egress IP on every
 invocation and so can never satisfy Brevo's IP allowlist. It is deliberately
 POST only and limited to two paths.
@@ -243,7 +243,7 @@ def send_transactional(to_email, to_name, subject, html_content,
     not land in campaign statistics.
     """
     sender = sender or {"name": "AI Readiness Partner",
-                        "email": "hello@go.aireadinesspartner.com"}
+                        "email": os.environ.get("SENDER_EMAIL", "")}
     payload = {"sender": sender,
                "to": [{"email": to_email, "name": to_name or to_email}],
                "subject": subject,

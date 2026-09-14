@@ -19,6 +19,27 @@ import datetime, html, json, os, pathlib, re
 from core import llm, qa_lint
 from core.x_client import client as x_client, me as x_me, XConfigError
 
+
+# ── who notifications are to and from ───────────────────────────────
+# Thin wrappers over core.settings so the call sites read the way they did
+# before, and so there is exactly one place a brand's identity is resolved.
+
+def _recipient_name(brand=None):
+    from core import settings
+    return settings.recipient_name(brand)
+
+
+def _sender(brand=None):
+    from core import settings
+    return settings.sender(brand)
+
+
+def _sender_email(brand=None):
+    from core import settings
+    return settings.sender_email(brand)
+
+
+
 STATE = "engage-state.json"
 
 SYSTEM = """You reply on behalf of a B2B brand on X. You are answering a real
@@ -544,7 +565,7 @@ def digest(brand, s, dry_run=False):
     except Exception:
         lc = {}
     to = (lc.get("digest_to") or (lc.get("sender") or {}).get("reply_to")
-          or "carl.chessum@aireadinesspartner.com")
+          or "")
     subject = "%d comment(s) to leave on X today" % len(pending)
     body = _digest_html(pending, cap)
 
@@ -555,8 +576,8 @@ def digest(brand, s, dry_run=False):
 
     from core import brevo
     mid, err = brevo.send_transactional(
-        to, "Carl Chessum", subject, body,
-        sender={"name": "ARP agents", "email": "hello@go.aireadinesspartner.com"},
+        to, _recipient_name(brand), subject, body,
+        sender=_sender(brand),
         reply_to=(lc.get("sender") or {}).get("reply_to"))
 
     if err:

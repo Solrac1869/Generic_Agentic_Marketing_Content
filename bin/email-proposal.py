@@ -13,6 +13,27 @@ import json
 import pathlib
 import sys
 
+
+# ── who notifications are to and from ───────────────────────────────
+# Thin wrappers over core.settings so the call sites read the way they did
+# before, and so there is exactly one place a brand's identity is resolved.
+
+def _recipient_name(brand=None):
+    from core import settings
+    return settings.recipient_name(brand)
+
+
+def _sender(brand=None):
+    from core import settings
+    return settings.sender(brand)
+
+
+def _sender_email(brand=None):
+    from core import settings
+    return settings.sender_email(brand)
+
+
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
@@ -31,9 +52,9 @@ def pending(brand_dir):
 
 
 def main():
-    from core.orchestrator import load_brand
+    from core.orchestrator import default_brand_id, load_brand
     from agents.refresh import proposal_html
-    brand = load_brand("arp")
+    brand = load_brand(default_brand_id())
     props = pending(brand["_dir"])
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
 
@@ -60,7 +81,7 @@ def main():
     except Exception:
         lc = {}
     to = (lc.get("digest_to") or (lc.get("sender") or {}).get("reply_to")
-          or "carl.chessum@aireadinesspartner.com")
+          or "")
 
     from core import brevo
     rc = 0
@@ -69,8 +90,8 @@ def main():
                              p.get("position"), p.get("impressions"),
                              p.get("reason"), p.get("diff"))
         _m, err = brevo.send_transactional(
-            to, "Carl Chessum", f"Page edit proposed: {p.get('query')}", body,
-            sender={"name": "ARP agents", "email": "hello@go.aireadinesspartner.com"},
+            to, _recipient_name(), f"Page edit proposed: {p.get('query')}", body,
+            sender=_sender(),
             reply_to=(lc.get("sender") or {}).get("reply_to"))
         if err:
             print(f"  FAILED {p.get('id')}: {err}", file=sys.stderr)
