@@ -1,0 +1,160 @@
+# channels.yaml — where work goes, and how it gets there.
+#
+# This is the file that makes the system yours. Every destination is optional:
+# delete a block and that destination stops existing, the agents stop planning
+# for it, and the health checks stop expecting it. A setup with only LinkedIn
+# and a blog is a valid setup and will report itself healthy.
+#
+# Two ideas are kept apart on purpose, because collapsing them is the mistake
+# this system was originally built with:
+#
+#   a CHANNEL is where something goes          (linkedin_personal, x, blog)
+#   a FORMAT is what it is                     (single_post, carousel, article)
+#
+# Video is a format, not a destination. A talking head belongs on X where a
+# face does the work; a motion graphic belongs on LinkedIn where a number on
+# screen does. If video were a channel you could not say that.
+#
+# Secrets never appear here. This file is committed; credentials live in the
+# environment file that setup writes, and are named here only by key.
+
+# ─── Social ────────────────────────────────────────────────────────
+channels:
+
+  linkedin_personal:
+    enabled: true
+    publisher: linkedin            # core/publishers/linkedin.py
+    # Posts as a person. Needs w_member_social on the token.
+    token_path: ~/.linkedin_tokens.json
+    formats: [long_form_text, carousel, article, motion_graphics]
+    char_limit: 3000
+    max_per_week: 8
+    hashtags: [YourTag, YourOtherTag]
+    max_hashtags: 3
+    draft_model: claude-opus-5     # voice matters here, pay for it
+
+  linkedin_company:
+    enabled: false
+    publisher: linkedin
+    # A company page needs its own URN and w_organization_social. Without
+    # both, the publisher refuses rather than posting company content to a
+    # personal profile, which is the worse failure.
+    organisation_urn: ""           # urn:li:organization:0000000
+    formats: [long_form_text, article, motion_graphics]
+    char_limit: 3000
+    max_per_week: 5
+
+  x:
+    enabled: true
+    publisher: x                   # core/publishers/x.py
+    # Credentials come from the environment: X_API_KEY, X_API_SECRET,
+    # X_ACCESS_TOKEN, X_ACCESS_TOKEN_SECRET.
+    formats: [single_post, thread, motion_graphics, ugc_presenter]
+    char_limit: 280                # links count as 23 whatever their length
+    max_per_week: 30
+    hashtags: [YourTag]
+    max_hashtags: 2
+    draft_model: claude-sonnet-5
+
+# ─── Where long-form lands ─────────────────────────────────────────
+# One of these, or none. The blog publisher is an adapter: the agents write an
+# article and hand it over, and this decides what "publish" means.
+
+  blog:
+    enabled: true
+
+    # git — commit a markdown file into a static site repo and push. Works
+    #       with Astro, Hugo, Eleventy, Jekyll, anything file-based.
+    # webhook — POST the article as JSON to a URL you control. Use this for
+    #       WordPress, Webflow, Ghost, Sanity, or your own endpoint.
+    # local — write the file to a directory and stop. For testing, or for a
+    #       site you deploy some other way.
+    publisher: git
+
+    # --- publisher: git ---------------------------------------------
+    repo_url: ""                   # git@github.com:you/your-site.git
+    working_copy: ~/your-site      # where the droplet keeps its clone
+    branch: main
+    content_dir: src/content/blog  # markdown goes here
+    image_dir: public/images/blog  # hero images go here
+    image_url_prefix: /images/blog # how the site serves them
+    commit_name: "Content agent"
+    commit_email: "agent@example.com"
+    # Articles publish as drafts first when this is true, and go live only
+    # after a person releases them from the board. False publishes on write,
+    # which is what you want for SEO: ranking starts when the page exists.
+    hold_for_review: false
+
+    # --- publisher: webhook -----------------------------------------
+    # webhook_url: https://example.com/api/posts
+    # webhook_secret_env: BLOG_WEBHOOK_SECRET   # sent as Authorization: Bearer
+    # webhook_format: json                      # json | multipart
+
+    # --- the contract, whichever publisher you choose ---------------
+    # The article arrives with: title, slug, description, body (markdown),
+    # hero_image (bytes), faqs [{question, answer}], categories, tags,
+    # canonical_url. A publisher's job is to turn that into a live page and
+    # return the URL. Nothing downstream works without a real URL: the social
+    # posts that promote the article are written against it.
+    site: https://example.com      # used to build the published URL
+    formats: [article]
+    draft_model: claude-opus-5
+    max_per_week: 5
+
+# ─── Video, which is a format on the channels above ────────────────
+video:
+  enabled: true
+  # local — ffmpeg on the server. Free, always works, no account needed.
+  #         Renders text cards over a brand-coloured background with a
+  #         voiceover. Not a talking head.
+  # higgsfield — hosted generation. Better looking, costs credits, and can
+  #         fail in ways outside your control, so local remains the fallback.
+  provider: local
+  provider_model: seedance1_5
+  max_credits_per_video: 10
+  max_per_week: 3
+  # Voice for the narration. Needs ELEVENLABS_API_KEY in the environment.
+  voice_provider: elevenlabs
+  formats: [motion_graphics, ugc_presenter, screen_capture]
+  # Which presenter types the brand permits. This is a policy setting, not a
+  # technical one: see docs/SYNTHETIC-MEDIA.md before widening it.
+  presenter_types: [brand_narrator]
+
+# ─── Measurement ───────────────────────────────────────────────────
+# Both optional. Without them the system still publishes; it just cannot tell
+# you whether anything worked, and strategy will say so rather than guess.
+analytics:
+  ga4:
+    enabled: false
+    property_id: ""                # 123456789
+    key_path: ~/.secrets/ga4-reader.json   # service account with Viewer
+  search_console:
+    enabled: false
+    site_url: ""                   # must match the GSC property exactly,
+                                   # including https:// and any trailing slash
+    token_path: ~/.gsc-token.json
+
+# ─── Notification ──────────────────────────────────────────────────
+# Where the system talks to you. An alert nobody reads is not an alert.
+notify:
+  enabled: true
+  provider: brevo                  # brevo | smtp | none
+  to: ""                           # you@example.com
+  from_name: "Content agents"
+  from_email: ""                   # must be a verified sender
+  board_url: ""                    # https://yourdomain/dashboard/
+  # Below this many minutes before a slot, the system stops asking and ships.
+  veto_window_minutes: 45
+
+# ─── Engagement ────────────────────────────────────────────────────
+engagement:
+  enabled: false
+  # Replying to people who mention you is permitted on every X tier.
+  reply_to_mentions: true
+  # Replying to people who have NOT mentioned you is refused on most tiers
+  # with a 403, and repeated forbidden calls are what gets an API key
+  # reviewed. Leave this off unless you have confirmed your tier allows it
+  # with one manual reply.
+  reply_to_strangers: false
+  max_replies_per_day: 6
+  queries: []                      # search terms, only used when strangers on

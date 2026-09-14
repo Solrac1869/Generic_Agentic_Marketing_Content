@@ -1,0 +1,20 @@
+# Credentials. Never committed, referenced by name from config only.
+.env
+*.pem
+*.key
+secrets*.json
+.secrets*
+
+# Your configuration, once you have made it yours. The .example files are
+# committed; your filled-in versions are not, so a fork cannot leak them.
+config/brand.yaml
+config/channels.yaml
+config/expression.yaml
+config/lifecycle.yaml
+
+# Generated
+__pycache__/
+*.pyc
+state/
+brands/
+outputs/
