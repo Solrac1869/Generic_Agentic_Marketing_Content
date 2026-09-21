@@ -190,6 +190,46 @@ def _safe_items(f):
         return []
 
 
+
+def _shape(item_id, week, bdir):
+    """Measurable properties of the published copy.
+
+    Length, whether it carried a link, and how long the opening line is. All
+    three are decisions somebody makes every time a post is written, and none
+    was recorded, so the store could rank formats and days and never say a
+    word about the thing most often argued over.
+
+    Returns empty when there is no draft. A missing file is a post that was
+    never written, not a post of length zero, and recording a zero would drag
+    every average toward it.
+    """
+    f = bdir / "outputs" / week / (str(item_id) + ".md")
+    if not f.exists():
+        return {}
+    try:
+        from core import qa_lint
+        body = qa_lint.draft_body(f.read_text())
+    except Exception as e:
+        # An empty result means "never written", which is why it is empty: a
+        # zero would drag every average toward it. A draft that exists and
+        # cannot be read is a different thing and must not look the same, or a
+        # real regression in draft_body silently suppresses these metrics for
+        # every item and reads as normal.
+        print("  WARNING: %s exists but could not be read for shape: %s: %s"
+              % (f.name, type(e).__name__, e))
+        return {}
+    if not body.strip():
+        return {}
+    first = next((ln for ln in body.splitlines() if ln.strip()), "")
+    return {
+        "chars": len(body),
+        "words": len(body.split()),
+        "hook_chars": len(first.strip()),
+        "has_link": "http" in body,
+        "paragraphs": len([b for b in body.split("\n\n") if b.strip()]),
+    }
+
+
 def _item_state(iid, week, bdir, published):
     """What actually became of an item, which is not the same as its status.
 
@@ -267,6 +307,11 @@ def write_store(brand, bdir, ga_rows, ga_err, by_content, lead_err,
             "time": it.get("time"),
             "cta": it.get("cta"),
             "working_title": (it.get("working_title") or "")[:140],
+            # The shape of the post, so the question "what length works" can
+            # eventually be answered from this brand's own results rather than
+            # from a number somebody read in a blog. None of it was recorded
+            # before, so no amount of traffic would have answered it.
+            **_shape(iid, week, bdir),
             "state": _item_state(iid, week, bdir, published),
             "published_at": pub.get("at") if pub.get("status") == "published" else None,
             "platform_id": pub.get("detail") if pub.get("status") == "published" else None,

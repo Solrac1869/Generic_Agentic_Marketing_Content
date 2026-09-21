@@ -339,6 +339,79 @@ def _evidence(c, window=30):
     }
 
 
+
+def campaign_stats(brand, days=90):
+    """What the outbound email actually did. Sent, delivered, clicked, lost.
+
+    Every number here was already in the record and none of it was reported,
+    so the question "how is the outreach performing" had no answer despite the
+    data sitting in state/crm-<brand>.json since August.
+
+    Opens are reported and deliberately not headlined. Apple Mail Privacy
+    Protection fetches every image before the recipient sees anything, so a
+    "loaded" event means a proxy ran, not that a person read it. In this
+    record proxy loads outnumber real opens fifty-six to one. Quoting an open
+    rate off that would be inventing a number, so clicks lead: a click needs a
+    person, and the machine ones are already separated elsewhere.
+    """
+    data = load(brand)
+    contacts = data.get("contacts", {})
+    n = {"requests": 0, "delivered": 0, "clicks": 0, "opened": 0,
+         "loadedByProxy": 0, "hardBounces": 0, "softBounces": 0, "error": 0}
+    clickers, delivered_to = set(), set()
+    for em, c in contacts.items():
+        for e in (c.get("events") or []):
+            ev = e.get("event")
+            if ev in n:
+                n[ev] += 1
+            if ev == "clicks":
+                clickers.add(em)
+            if ev == "delivered":
+                delivered_to.add(em)
+
+    states = {}
+    for c in contacts.values():
+        states[c.get("state", "pool")] = states.get(c.get("state", "pool"), 0) + 1
+
+    reached = len(delivered_to)
+    return {
+        "contacts": len(contacts),
+        "never_contacted": states.get("pool", 0),
+        "states": states,
+        "requests": n["requests"],
+        "delivered": n["delivered"],
+        "people_reached": reached,
+        "people_who_clicked": len(clickers),
+        "click_rate_by_person": round(100.0 * len(clickers) / reached, 1) if reached else 0.0,
+        "clicks": n["clicks"],
+        "bounces": n["hardBounces"] + n["softBounces"],
+        "errors": n["error"],
+        "opens_reported": n["opened"],
+        "proxy_loads": n["loadedByProxy"],
+    }
+
+
+def campaign_report(brand, days=90):
+    """The above, as lines a person reads."""
+    s = campaign_stats(brand, days)
+    out = [
+        "Outbound email, all time",
+        "  %d contacts, %d never contacted" % (s["contacts"], s["never_contacted"]),
+        "  %d delivered to %d people" % (s["delivered"], s["people_reached"]),
+        "  %d clicked, %s%% of the people reached" % (
+            s["people_who_clicked"], s["click_rate_by_person"]),
+        "  %d bounce(s), %d error(s)" % (s["bounces"], s["errors"]),
+    ]
+    if s["proxy_loads"]:
+        out.append("  opens not quoted: %d proxy loads against %d real opens, "
+                   "so an open rate here would be invented"
+                   % (s["proxy_loads"], s["opens_reported"]))
+    by = ", ".join("%s %d" % (k, v) for k, v in
+                   sorted(s["states"].items(), key=lambda kv: -kv[1]))
+    out.append("  lifecycle: " + by)
+    return "\n".join(out)
+
+
 def compute_states(brand):
     """Derive one state per contact. Highest matching rank wins."""
     lc = lifecycle(brand)

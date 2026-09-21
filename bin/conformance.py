@@ -269,10 +269,34 @@ def _():
     durable = [f for f in live.glob("*.json")
                if any(f.name.startswith(p) for p in
                       ("claims-", "crm-", "performance-", "budget-ledger-"))]
-    missing = [f.name for f in durable if not (snap / f.name).exists()]
+    # A sensitive file is stored encrypted, so <name>.gpg counts. Checking
+    # only for the bare name meant encrypting crm-arp.json made the check that
+    # guards the backup fail, which would have read as "the backup broke".
+    missing = [f.name for f in durable
+               if not (snap / f.name).exists()
+               and not (snap / (f.name + ".gpg")).exists()]
     if missing:
         return False, "never snapshotted: " + ", ".join(missing)
     return True, "%d irreplaceable file(s) mirrored to git" % len(durable)
+
+
+@check("GitHub mirrors the droplet", "no personal data is committed in the clear")
+def _():
+    """The snapshot is committed and pushed, so anything sensitive in it must
+    be encrypted. This exists because the encryption was written, not
+    committed, and the next snapshot wrote 11,850 lines of contacts into git
+    in plaintext twenty minutes after the history had been purged of exactly
+    that. The code being correct is not the same as the code being deployed.
+    """
+    snap = ROOT / "state-snapshot"
+    if not snap.is_dir():
+        return True, "no snapshot directory on this host"
+    bare = [f.name for f in snap.glob("crm-*.json")]
+    if bare:
+        return False, "plaintext personal data in the snapshot: " + ", ".join(bare)
+    enc = [f.name for f in snap.glob("crm-*.json.gpg")]
+    return True, ("%d encrypted, no plaintext" % len(enc) if enc
+                  else "nothing sensitive present")
 
 
 # ── "a gate" must actually gate ─────────────────────────────────────

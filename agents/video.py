@@ -220,6 +220,11 @@ def run(brand, budget, dry_run=False, from_raw=False, mode=None, **kw):
             _base = _ctas.get("audit")
             print("  %s: no live article for %s, cta fell back to the audit"
                   % (slug, _target))
+    # What a person can read off a screen and type. The tagged URL is for the
+    # caption, where it can be clicked; a query string on a video card is
+    # unreadable and nobody would type it.
+    destination_plain = str(_base or _ctas.get("audit", "")).split("?")[0]
+    destination_plain = destination_plain.replace("https://", "").replace("http://", "").rstrip("/")
     audit = utm.tag(_base or _ctas.get("audit", ""),
                     item.get("channel", "x"), week, slug,
                     item.get("pillar"), medium="video")
@@ -242,7 +247,16 @@ Never name {', '.join(brand.get('rules', {}).get('never_name_in_customer_copy', 
 === RESEARCH, the only permitted source of facts ===
 {research}
 
-Four to six scenes, 30 to 45 seconds in total. Return one JSON object:
+Four to six scenes, 30 to 45 seconds in total.
+
+THE LAST SCENE MUST SHOW THE ADDRESS.
+Its `text` is the destination in plain readable form: {destination_plain}
+Not "read the article", not "link below", not "more in the comments". Somebody
+watching this with the sound off and the caption collapsed has to be able to
+read where to go and type it. A video that names an article and does not show
+where it is wastes the whole thirty seconds.
+
+Return one JSON object:
 {{"scenes": [{{"narration": "one spoken sentence", "text": "short on-screen line, not the narration repeated"}}],
   "caption_x": "the post text, under 200 characters, ending with {audit}"}}"""
 
@@ -263,7 +277,14 @@ Four to six scenes, 30 to 45 seconds in total. Return one JSON object:
     narration = " ".join(s.get("narration", "") for s in script["scenes"])
     caption = script.get("caption_x", "")
     for label, body, ch in (("narration", narration, None), ("caption", caption, "x")):
-        fails, _ = qa_lint.lint({"text": body,
+        # The scenes are what a viewer actually sees. Passing only the caption
+        # meant the on-screen cards were never linted at all, and a video
+        # shipped ending on "the full argument is in the article" with no
+        # address anywhere on screen.
+        _seen = "\n".join(
+            str(sc.get("text") or "") + "\n" + str(sc.get("narration") or "")
+            for sc in (script.get("scenes") or []))
+        fails, _ = qa_lint.lint({"text": body, "seen_text": _seen,
                                  "source_url": item.get("source_url") or "research",
                                  # Always the brand narrator. This is what makes
                                  # qa_lint enforce the synthetic media policy:

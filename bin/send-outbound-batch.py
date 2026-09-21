@@ -17,7 +17,7 @@ Three things here exist because sent email cannot be recalled:
   rather than after eight of them have.
 
   Reply-to is a mailbox that actually receives mail. The sending subdomain
-  A subdomain sender often has no MX record, so the opt-out this email
+  a send-only subdomain typically has no MX record, so the opt-out this email
   promises would have bounced back at the person trying to use it.
 """
 import argparse
@@ -37,18 +37,28 @@ ROOT = pathlib.Path("/root/marketing-agents")
 # Telegram notify import below fails without this.
 sys.path.insert(0, str(ROOT))
 OUT = ROOT / "brands/arp/outbound"
-BATCH = OUT / "batch-2026-09-01.json"
+# The batch to send. Pinned to a single date in the source until now, so the
+# sender could only ever re-read one file from 1 September and could not pick
+# up a new list however many contacts were waiting. That is most of the reason
+# 196 prospects sat untouched: not a decision, a constant.
+def newest_batch():
+    files = sorted(OUT.glob("batch-*.json"))
+    return files[-1] if files else None
 LEDGER = OUT / "batch-2026-09-01.ledger.jsonl"
 
 SENDER = {"name": os.environ.get("SENDER_NAME", ""),
           "email": os.environ.get("SENDER_EMAIL", "")}
 # Not the sending subdomain: it has no MX, so replies to it bounce.
 REPLY_TO = {"name": os.environ.get("REPLY_TO_NAME", "") or SENDER["name"],
-            "email": os.environ.get("REPLY_TO_EMAIL", "")}
+            "email": os.environ.get("REPLY_TO_EMAIL", "") or SENDER["email"]}
 
 # Deliberately excluded. The skip flag in the roster is one JSON key away from
 # a typo that would silently re-admit them, and this send was a decision.
-NEVER_MAIL = {"andrew.waugh@satalia.com"}
+# Addresses that must never be mailed whatever the roster says. Populated
+# from NEVER_MAIL (comma separated), because a suppression list is specific to
+# whoever is sending and a real address does not belong in a shared repo.
+NEVER_MAIL = {a.strip().lower() for a in
+              os.environ.get("NEVER_MAIL", "").split(",") if a.strip()}
 
 SLATE, GOLD = "#1a2730", "#947f5b"
 LOGO = os.environ.get("LOGO_URL", "")
@@ -271,6 +281,8 @@ def record(email, message_id):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--batch", default=None,
+                    help="batch file to send. Default: the newest in outbound/.")
     ap.add_argument("--seed-only", action="store_true",
                     help="send only to the seed. Note this writes a ledger "
                          "entry, so the seed will then be skipped when the "
@@ -283,7 +295,11 @@ def main():
     if not a.dry_run and not os.environ.get("RELAY_SECRET"):
         sys.exit("RELAY_SECRET is not set, refusing to run")
 
-    data = json.loads(BATCH.read_text())
+    batch_path = pathlib.Path(a.batch) if a.batch else newest_batch()
+    if not batch_path or not batch_path.exists():
+        sys.exit("no batch file. Build one with bin/build-batch.py first.")
+    print(f"  batch: {batch_path.name}")
+    data = json.loads(batch_path.read_text())
     roster = [r for r in data["recipients"] if not r.get("skip")]
 
     # Seeds are merged from config into every roster, so being able to see what

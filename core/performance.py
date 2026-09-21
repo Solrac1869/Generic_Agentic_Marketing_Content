@@ -44,7 +44,11 @@ SCHEMA = 1
 # stored, because the store is a record of decisions and outcomes rather than a
 # second copy of the calendar.
 _ITEM_FIELDS = ("week", "channel", "pillar", "format", "day", "time",
-                "cta", "working_title")
+                "cta", "working_title",
+                # The shape of the published copy. Absent until now, which is
+                # why the store could rank formats and days and never say a
+                # word about length -- the property argued over most often.
+                "chars", "words", "hook_chars", "has_link", "paragraphs")
 
 
 def path(brand):
@@ -120,6 +124,54 @@ def record_items(brand, items):
                 attrs[f] = it[f]
     _save(brand, data)
     return added, len(data["items"])
+
+
+
+def by_length(brand, channel=None, bands=((0, 600), (600, 1200), (1200, 2000), (2000, 3000))):
+    """Outcome per length band, for one channel.
+
+    The question "how long should a LinkedIn post be" is answered everywhere
+    by people quoting each other. This answers it from what this brand
+    published and what happened next.
+
+    Honest about its own weakness, because a number with no sample behind it
+    is worse than no number: every band reports how many posts are in it, and
+    a caller is expected to ignore a band of two. The verdict is deliberately
+    None until a band has at least eight published posts and the best band
+    beats the worst by more than a quarter. Before that the right answer is
+    that we do not know yet, and saying so is the useful output.
+    """
+    out = []
+    for lo, hi in bands:
+        rows = []
+        for e in load(brand).get("items", {}).values():
+            a = e.get("attributes", {})
+            if not a.get("published_at") or not a.get("chars"):
+                continue
+            if channel and a.get("channel") != channel:
+                continue
+            if lo <= a["chars"] < hi:
+                rows.append(e)
+        total = 0.0
+        for e in rows:
+            for o in e.get("observations", []):
+                m = o.get("metrics") or {}
+                total += float(m.get("sessions") or 0) + 5 * float(m.get("conversions") or 0)
+        out.append({"band": "%d-%d" % (lo, hi), "posts": len(rows),
+                    "score": round(total, 1),
+                    "per_post": round(total / len(rows), 2) if rows else 0.0})
+
+    usable = [b for b in out if b["posts"] >= 8]
+    verdict = None
+    if len(usable) >= 2:
+        best = max(usable, key=lambda b: b["per_post"])
+        worst = min(usable, key=lambda b: b["per_post"])
+        if worst["per_post"] > 0 and best["per_post"] > worst["per_post"] * 1.25:
+            verdict = best["band"]
+    return {"bands": out, "verdict": verdict,
+            "why": ("%s outperforms on %d posts" % (verdict, next(b["posts"] for b in out if b["band"] == verdict))
+                    if verdict else
+                    "not enough published posts with a length recorded to say")}
 
 
 def record_observation(brand, item_id, source, metrics=None, note=None):

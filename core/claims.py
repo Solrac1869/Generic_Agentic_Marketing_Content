@@ -313,7 +313,13 @@ def mark_used(brand, claim_id, item_id):
     c["last_used"] = _now()
     c.setdefault("used_by", []).append({"item": item_id, "at": _now()})
     c["used_by"] = c["used_by"][-20:]
-    save(brand, data)
+    # _atomic_save, not save. save() writes in place, so a concurrent
+    # load() can read a half-written file and then persist an empty pool
+    # over every verified claim on its own next write. That is exactly
+    # what _atomic_save was written to prevent, and mark_used was missed.
+    # It now fires on every claim swap rather than only on a repair, so
+    # the race went from rare to routine.
+    _atomic_save(brand, data)
     return c
 
 
@@ -602,6 +608,20 @@ def settle_items(brand, budget, items, repair_budget=4, allow_repair=True):
     return notes
 
 
+def _host(url):
+    """The hostname, for a log line, without ever raising.
+
+    str(url).split("/")[2] assumes a scheme. One scheme-less entry in the pool
+    turned a cosmetic log line into an IndexError that took down settle_items,
+    and with it whichever agent called it -- strategy writing the week's plan,
+    usually. A note is not worth a crash.
+    """
+    try:
+        return str(url).split("//")[-1].split("/")[0] or str(url)[:40]
+    except Exception:
+        return "unknown"
+
+
 def _replace_unsourced(brand, items):
     """Swap a citation that could not be substantiated for one that has been.
 
@@ -649,10 +669,17 @@ def _replace_unsourced(brand, items):
             spoken.add(str(swap.get("text")).strip())
             try:
                 mark_used(brand, swap.get("id"), it.get("id"))
-            except Exception:
-                pass
+            except Exception as e:
+                # The whole point of the swap is that nothing is reused inside
+                # a week, and mark_used is what records the use. Swallowing a
+                # failure here means the substitution happened and the pool
+                # does not know, so the same claim can be offered again. Every
+                # other failure in this function is reported; this one was not.
+                notes.append("%s: swapped in %s but could not record the use "
+                             "(%s), it may be offered again"
+                             % (it.get("id"), swap.get("id"), type(e).__name__))
             notes.append("%s: unsourced claim replaced with a substantiated one (%s)"
-                         % (it.get("id"), str(swap.get("url")).split("/")[2]))
+                         % (it.get("id"), _host(swap.get("url"))))
         else:
             it["key_data_point"] = ""
             it["source_url"] = ""

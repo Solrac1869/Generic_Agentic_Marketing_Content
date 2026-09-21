@@ -27,10 +27,19 @@ daily commit of a slowly-changing file costs very little.
 """
 
 import argparse
+import os
 import pathlib
 import shutil
 import subprocess
 import sys
+
+#: Who commits generated files. Neutral by default, because a fallback naming
+#: somebody else is worse than no fallback: it works in testing and is wrong
+#: for every other user. Override with AGENT_COMMIT_NAME / AGENT_COMMIT_EMAIL,
+#: or per brand through channels.blog.commit_name / commit_email.
+_AGENT_NAME = os.environ.get("AGENT_COMMIT_NAME", "Content agent")
+_AGENT_EMAIL = os.environ.get("AGENT_COMMIT_EMAIL", "agent@localhost")
+
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SRC = ROOT / "state"
@@ -38,6 +47,35 @@ DEST = ROOT / "state-snapshot"
 
 #: Matched against the filename. Everything else in state/ is regenerable.
 DURABLE = ("claims-", "crm-", "performance-", "budget-ledger-")
+
+#: Files holding personal data. Encrypted to a public key before they are
+#: committed, and never written to the repo in the clear.
+#:
+#: Asymmetric on purpose. The droplet holds only the public half, so it can add
+#: to the backup and cannot read it. A compromise of the box holding the
+#: publishing credentials does not also hand over the contact list.
+SENSITIVE = ("crm-",)
+
+#: Public key fingerprint to encrypt to. Set in /etc/marketing-agents.env.
+RECIPIENT_ENV = "SNAPSHOT_GPG_RECIPIENT"
+
+
+def _recipient():
+    return (os.environ.get(RECIPIENT_ENV) or "").strip()
+
+
+def _encrypt(src, dest, recipient):
+    """Encrypt to `recipient`. True only if a real, non-empty file resulted."""
+    try:
+        r = subprocess.run(
+            ["gpg", "--batch", "--yes", "--trust-model", "always",
+             "--recipient", recipient, "--output", str(dest), "--encrypt", str(src)],
+            capture_output=True, text=True, timeout=180)
+    except Exception as e:
+        return False, "%s: %s" % (type(e).__name__, e)
+    if r.returncode != 0 or not dest.exists() or dest.stat().st_size == 0:
+        return False, (r.stderr or "gpg produced nothing").strip()[:160]
+    return True, "%d KB encrypted" % (dest.stat().st_size // 1024)
 
 NOTE = """\
 # State snapshot
@@ -54,17 +92,6 @@ by anything at runtime — it is a copy, and the live files stay in `state/`.
 To restore, copy a file back into `state/` and restart nothing; the agents
 read it on their next run.
 """
-
-
-def _identity():
-    """Who commits the snapshot. Neutral unless the brand says otherwise."""
-    try:
-        sys.path.insert(0, str(ROOT))
-        from core import settings, orchestrator
-        return settings.commit_identity(
-            orchestrator.load_brand(orchestrator.default_brand_id()))
-    except Exception:
-        return ("Content agent", "agent@localhost")
 
 
 def durable_files():
@@ -107,8 +134,29 @@ def main():
 
     DEST.mkdir(parents=True, exist_ok=True)
     (DEST / "README.md").write_text(NOTE)
+    recipient, skipped = _recipient(), []
     for f in files:
+        if any(f.name.startswith(pre) for pre in SENSITIVE):
+            # Fails closed. With no recipient the file is skipped and said so,
+            # never written in the clear. A backup that silently downgrades its
+            # own protection is worse than one that is absent, because the
+            # first looks like it worked.
+            if not recipient:
+                skipped.append("%s: no %s set, not backed up in the clear"
+                               % (f.name, RECIPIENT_ENV))
+                continue
+            ok, why = _encrypt(f, DEST / (f.name + ".gpg"), recipient)
+            if not ok:
+                skipped.append("%s: encryption failed, %s" % (f.name, why))
+                continue
+            stale = DEST / f.name
+            if stale.exists():
+                stale.unlink()
+            print("  %s -> %s.gpg (%s)" % (f.name, f.name, why))
+            continue
         shutil.copy2(f, DEST / f.name)
+    for s_ in skipped:
+        print("  SKIPPED %s" % s_)
 
     add = subprocess.run(["git", "-C", str(ROOT), "add", "--", "state-snapshot"],
                          capture_output=True, text=True, timeout=120)
@@ -122,8 +170,8 @@ def main():
            % ", ".join(changed))
     c = subprocess.run(
         ["git", "-C", str(ROOT),
-         "-c", "user.name=%s" % _identity()[0],
-         "-c", "user.email=%s" % _identity()[1],
+         "-c", "user.name=%s" % _AGENT_NAME,
+         "-c", "user.email=%s" % _AGENT_EMAIL,
          "commit", "-q", "-m", msg], capture_output=True, text=True, timeout=120)
     if c.returncode != 0 and "nothing to commit" not in (c.stdout + c.stderr):
         print("could not commit: %s" % (c.stderr or c.stdout)[:200])

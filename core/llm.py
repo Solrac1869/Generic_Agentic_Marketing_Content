@@ -72,11 +72,39 @@ def _trip(code, body):
     low = body.lower()
     if not any(w in low for w in ACCOUNT_FAULT):
         return
+    first = not BREAKER.exists()
     try:
         BREAKER.parent.mkdir(parents=True, exist_ok=True)
         BREAKER.write_text(json.dumps({
             "reason": "HTTP %s: %s" % (code, body[:200]),
             "tripped": datetime.datetime.now(datetime.timezone.utc).isoformat()}))
+    except Exception:
+        pass
+
+    # Say so immediately, and only on the transition.
+    #
+    # The key expired at 19:30 on 16 September. The breaker did its job and
+    # stopped every model call, then wrote a file and told nobody. The next
+    # word anyone had was the 06:00 status email eleven hours later, by which
+    # point four posts had missed their slots. A breaker that stops the damage
+    # silently has done half the work: the half that saves money, not the half
+    # that gets it fixed.
+    #
+    # Guarded on the file not already existing, so a hundred agents hitting
+    # the same dead account send one email rather than a hundred.
+    if not first:
+        return
+    try:
+        import sys as _sys
+        _sys.path.insert(0, str(BREAKER.parent.parent))
+        from agents.publish import notify
+        notify("The API account is not usable, so every agent that calls the "
+               "model has stopped. Nothing is being drafted, planned or "
+               "researched until this is fixed.\n\n%s\n\nPublishing, the CRM "
+               "and the checks carry on: they make no model calls. Any "
+               "successful call clears this automatically, so replacing the "
+               "key is the whole fix." % ("HTTP %s: %s" % (code, body[:300])),
+               subject="ARP: the API account has stopped the agents")
     except Exception:
         pass
 

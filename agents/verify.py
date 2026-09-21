@@ -23,25 +23,10 @@ status codes or logs. It checks the thing itself, and it is loud when it cannot.
 
 import collections
 import datetime
-import hashlib, json, os, pathlib, re, subprocess, urllib.request
-import time
+import hashlib, json, os, pathlib, re, subprocess, time, urllib.request
 import urllib.error
 from core import weeks
-
-
 from core import settings as _s
-
-
-def _own_domain(brand=None):
-    """This brand's bare domain, for telling our links from other people's.
-
-    Empty when no site is configured, and every caller treats empty as "do not
-    check" rather than "matches everything".
-    """
-    site = _s.get(brand, "site", "")
-    return str(site).split("//")[-1].strip("/").split("/")[0] if site else ""
-
-
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OK, WARN, FAIL = "ok", "warn", "FAIL"
@@ -415,10 +400,14 @@ def check_site(brand):
 
     # Is the newest commit actually deployed? A push that never built is
     # indistinguishable from a successful one without checking the page.
-    repo = pathlib.Path(brand.get("channels", {}).get("blog", {})
-                        .get("working_copy") or "")
-    cdir = repo / brand.get("channels", {}).get("blog", {}).get("content_dir", "src/content/blog")
-    if cdir.exists():
+    # No default repo path. A hardcoded one points at whoever built this
+    # first, and a check that silently reads the wrong directory is worse than
+    # one that says it cannot run.
+    _blog = brand.get("channels", {}).get("blog", {}) or {}
+    _repo = _blog.get("droplet_repo")
+    cdir = (pathlib.Path(_repo) / _blog.get("content_dir", "src/content/blog")
+            if _repo else None)
+    if cdir and cdir.exists():
         live_posts = [f.stem for f in cdir.glob("*.md") if "draft: true" not in f.read_text()]
         missing = []
         for slug in live_posts[-4:]:
@@ -632,8 +621,11 @@ def check_published_output(brand):
         if fails:
             bad += 1
             offenders.append("%s (%s)" % (iid, fails[0].split(":")[0]))
+        # Our own links are the ones that must carry UTM parameters; a link
+        # to someone else's site is not ours to tag.
+        _own = _s.site(brand).split("//", 1)[-1].strip("/")
         for url in re.findall(r"https?://[^\s\)]+", body):
-            if _own_domain(brand) and _own_domain(brand) in url:
+            if _own and _own in url:
                 links += 1
                 if "utm_" not in url:
                     untagged += 1
@@ -670,9 +662,31 @@ def check_schedule():
         expected = list(AGENTS)
     except Exception:
         expected = ["research", "strategy", "produce", "publish", "analyse", "blog", "engage"]
+    # An agent is scheduled if cron runs it directly, or if it is a step in a
+    # chain that cron starts. Before chains existed only the first was
+    # possible; the day they landed this reported six correctly scheduled
+    # agents as NOT scheduled, and would have emailed that every day.
+    #
+    # A chain nobody starts counts for nothing, so the chain itself must be in
+    # the crontab before its steps are credited.
+    chained = set()
+    try:
+        from importlib.machinery import SourceFileLoader
+        _rc = SourceFileLoader(
+            "run_chain", str(ROOT / "bin" / "run-chain.py")).load_module()
+        for _name, _steps in _rc.CHAINS.items():
+            if re.search(rf"run-chain\.py\s+{re.escape(_name)}\b", cron):
+                chained |= {a for a, _x, _f in _steps}
+    except Exception as e:
+        out.append(_r("cron:chains", WARN,
+                      f"cannot read the chain definitions: {type(e).__name__}"))
+
     for agent in expected:
-        out.append(_r(f"cron:{agent}", OK if re.search(rf"run-agent\.sh {agent}\b", cron) else FAIL,
-                      "scheduled" if re.search(rf"run-agent\.sh {agent}\b", cron) else "NOT scheduled"))
+        direct = bool(re.search(rf"run-agent\.sh {agent}\b", cron))
+        how = ("scheduled" if direct
+               else "scheduled in a chain" if agent in chained
+               else "NOT scheduled")
+        out.append(_r(f"cron:{agent}", FAIL if how == "NOT scheduled" else OK, how))
     secrets = len(re.findall(r"^(?!#)[A-Z_]*(KEY|TOKEN|SECRET)[A-Z_]*=", cron, re.M))
     out.append(_r("cron:no_plaintext_secrets", FAIL if secrets else OK,
                   f"{secrets} secret(s) in crontab" if secrets else "none"))
@@ -1126,9 +1140,11 @@ def check_email_render(brand):
         except (ValueError, OSError):
             continue
         for para in d.get("body", "").split("\n\n"):
-            _byline = _s.author(brand) or ""
-        if "\n" in para.strip() and not (
-                _byline and para.strip().startswith(_byline)):
+            # A signature block is the one paragraph allowed internal
+            # newlines. Whose name it carries is per brand, not hardcoded.
+            _sig = (_s.author(brand) or _s.recipient_name(brand) or "").strip()
+            if ("\n" in para.strip()
+                    and not (_sig and para.strip().startswith(_sig))):
                 broken.append(f.stem)
                 break
     out.append(_r("email:sequence_copy", FAIL if broken else OK,
@@ -1438,10 +1454,39 @@ def check_engagement_health(brand):
                       f"{len(undated)} reply row(s) carry no usable date, so the "
                       f"7 day window cannot be trusted"))
     elif not attempts:
-        out.append(_r("engage:replies",
-                      FAIL if growth_on else WARN,
-                      "no reply attempted in 7 days; engage is configured to "
-                      "reply, so silence here is itself the failure"))
+        # No reply attempted is only a failure if there was something to reply
+        # to. engage replies to mentions of the account and nothing else, so on
+        # an account nobody mentions, silence is the correct behaviour. Asking
+        # "did it reply" reported a healthy agent as broken every day for nine
+        # days; the answerable question is whether it looked and succeeded.
+        #
+        # The previous guard here only held while historical 403s were still
+        # inside the seven day window. They aged out on 19 Sept and the check
+        # quietly went back to failing -- a fix that was true when written and
+        # expired without anyone touching it.
+        chk = state.get("last_mention_check") or {}
+        chk_on = _row_date(chk)
+        if chk.get("error"):
+            out.append(_r("engage:replies", FAIL,
+                          "engage could not read mentions: "
+                          + str(chk["error"])[:90]))
+        elif chk_on is None:
+            out.append(_r("engage:replies", WARN,
+                          "no record of engage checking mentions yet; it writes "
+                          "one on its next notify or ship run"))
+        elif chk_on < cutoff:
+            out.append(_r("engage:replies", FAIL,
+                          "engage has not checked mentions since %s"
+                          % chk_on.isoformat()))
+        elif not chk.get("new"):
+            out.append(_r("engage:replies", OK,
+                          "nothing to reply to: checked %s, no new mentions"
+                          % chk_on.isoformat()))
+        else:
+            out.append(_r("engage:replies",
+                          FAIL if growth_on else WARN,
+                          "%d new mention(s) at the last check and no reply "
+                          "attempted in 7 days" % int(chk.get("new") or 0)))
     else:
         worst = ""
         fails = [" ".join(str(v.get("error", "")).split())[:80]

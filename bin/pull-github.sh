@@ -32,11 +32,28 @@ say() { echo "$(now) pull $*" >> "$LOG"; }
 exec 9>"$(pwd)/state/.lock.pull-github"
 flock -n 9 || exit 0
 
-# An agent mid-run holds state/.lock.<agent>. flock -n on each tells us
-# whether anyone actually holds it, rather than trusting the file's existence:
-# a lock file outlives the process that made it.
-for f in state/.lock.*; do
-    case "$f" in state/.lock.pull-github|"state/.lock.*") continue;; esac
+# An agent mid-run holds state/.lock.<agent>. flock -n on each tells us whether
+# anyone actually holds it, rather than trusting the file's existence: a lock
+# file outlives the process that made it.
+#
+# Only long agents count. The first version skipped for any lock at all, and
+# this job and `publish --mode notify` are both on */15 -- so they fired in the
+# same minute every time and the pull was skipped on every single run from the
+# day it was installed. The log is an unbroken wall of "skipped: publish is
+# running". The return path never once ran.
+#
+# A publish notify takes one second and writes nothing this job touches.
+# Blocking a code update on it was never the point. What matters is an agent
+# that could be halfway through writing the files a pull would replace, and
+# those are the slow ones: the chain, and anything that drafts or commits.
+#
+# The cron line is also offset off the quarter hour, so a collision is rare
+# rather than guaranteed. Belt and braces, because the failure mode here is
+# silent and this job exists to prevent a silent failure.
+for f in state/.lock.chain-* state/.lock.blog* state/.lock.strategy \
+         state/.lock.produce* state/.lock.research* state/.lock.site* \
+         state/.lock.refresh* state/.lock.video* state/.lock.seo*; do
+    [ -e "$f" ] || continue
     if ! flock -n "$f" true 2>/dev/null; then
         say "skipped: $(basename "$f" | sed 's/^\.lock\.//') is running"
         exit 0
@@ -80,6 +97,56 @@ PY
     exit 1
 fi
 
+# An untracked file at a path an incoming commit adds aborts the merge with
+# "untracked working tree files would be overwritten". It happened the first
+# time a script was copied to the droplet by hand and later committed
+# properly: the pull failed every quarter hour and said so only in a log.
+#
+# Where the untracked copy is byte-identical to the one arriving, it is not
+# somebody's work, it is the same file. Move it aside and let the merge
+# deliver it. Anything that actually differs is left alone and declines.
+for f in $(git diff --name-only HEAD..github/main); do
+    [ -e "$f" ] || continue
+    git ls-files --error-unmatch "$f" >/dev/null 2>&1 && continue
+    if git show "github/main:$f" 2>/dev/null | cmp -s - "$f"; then
+        mv "$f" "$f.pre-pull" && say "moved identical untracked $f aside"
+    else
+        say "declined: untracked $f differs from the one arriving"
+        exit 1
+    fi
+done
+
+# Diverged. The droplet is a follower that also commits: snapshot-state and
+# archive-weeks write generated data locally, so any time GitHub moves in
+# between, both sides are ahead and a fast-forward can never resolve it. That
+# wedged this repo twice in one day, each time needing a person.
+#
+# Those local commits are always generated output, never code, so replaying
+# them on top of GitHub is safe. That is checked rather than assumed: if any
+# droplet-only commit touches agents, core, bin or .claude, somebody has been
+# editing code on the server and this stops and says so.
+ahead=$(git rev-list --count github/main..HEAD 2>/dev/null || echo 0)
+if [ "$ahead" != "0" ]; then
+    touched=$(git diff --name-only github/main...HEAD | grep -E "^(agents|core|bin|\.claude)/" || true)
+    if [ -n "$touched" ]; then
+        say "declined: $ahead local commit(s) touch code: ${touched//$'\n'/ }"
+        exit 1
+    fi
+    say "rebasing $ahead generated-data commit(s) onto github/main"
+    # --autostash because the droplet always has unstaged changes: the agents
+    # rewrite publish-state, engage-state and watch-state as they run, and
+    # those are tracked. Without it a rebase refuses on live state that has
+    # nothing to do with the commits being replayed, which is how this stayed
+    # wedged after the divergence itself was handled.
+    if ! git rebase --autostash github/main >/dev/null 2>&1; then
+        git rebase --abort >/dev/null 2>&1
+        say "declined: rebase of local commits failed"
+        exit 1
+    fi
+    git push -q github HEAD:main 2>/dev/null && say "pushed the rebased commit(s)"
+    exit 0
+fi
+
 out=$(git merge --ff-only github/main 2>&1)
 rc=$?
 say "rc=$rc behind=$behind ${out//$'\n'/ }"
@@ -99,3 +166,6 @@ PY
     exit 1
 }
 exit 0
+
+# Return path verified end to end on 15 Sep 2026: this line was pushed from
+# the workstation and reached the droplet via bin/pull-github.sh, unaided.

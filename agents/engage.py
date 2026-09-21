@@ -642,6 +642,19 @@ def run(brand, budget, dry_run=False, from_raw=False, mode="notify", **kw):
     except (TypeError, ValueError):
         per_run = 25
     mentions, err, complete = fetch_mentions(fetch_limit, s.get("last_mention_id"))
+    # Record that mentions were looked at, and what was found. verify read "no
+    # reply attempted in 7 days" as a failure, but that is only a failure if
+    # there was something to reply to. Nobody has mentioned the account since
+    # 11 Sept, so a working agent was reported broken every day and the board
+    # taught a person to ignore it. The answerable question is whether engage
+    # looked and succeeded, not whether it replied.
+    s["last_mention_check"] = {
+        "at": datetime.datetime.now().isoformat(timespec="seconds"),
+        "new": len(mentions or []),
+        "error": str(err)[:200] if err else None,
+    }
+    if not dry_run:
+        _save(bdir, s)
     if not complete and not err:
         print("  NOTE: mention window truncated, holding the pointer this run")
     if err:

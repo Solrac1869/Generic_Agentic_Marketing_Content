@@ -183,7 +183,49 @@ class BudgetExceeded(RuntimeError):
 
 # ─── Dispatch ──────────────────────────────────────────────────────
 
-AGENTS = ["research", "strategy", "produce", "publish", "analyse", "site", "blog", "engage", "verify", "video", "seo", "status", "report", "refresh", "critic", "review", "crm", "media"]
+AGENTS = ["research", "strategy", "produce", "publish", "analyse", "site", "blog", "engage", "verify", "video", "seo", "status", "report", "refresh", "critic", "review", "crm", "media", "remedy"]
+
+
+_MODEL_CALLERS = None
+
+
+def _model_callers():
+    """Agents that make a model call, read once from their own source.
+
+    A list kept by hand goes stale the moment an agent gains or loses its
+    llm.call, and the failure is silent in both directions: a new model-caller
+    burns money against a dead account, or a mechanical agent is stopped by a
+    fault that cannot affect it.
+    """
+    global _MODEL_CALLERS
+    if _MODEL_CALLERS is None:
+        import ast as _ast
+        found = set()
+        for f in (ROOT / "agents").glob("*.py"):
+            # Parsed, not grepped. A substring search for "llm.call" misses
+            # `from core.llm import call` used as a bare call(), and an agent
+            # written that way would keep spending against a dead account --
+            # the exact failure this exists to prevent. bin/conformance.py
+            # already learned this lesson; this had not.
+            try:
+                src = f.read_text(errors="replace")
+                tree = _ast.parse(src)
+            except Exception:
+                found.add(f.stem)   # unreadable or unparsable: assume it calls
+                continue
+            direct = {a.asname or a.name
+                      for n in _ast.walk(tree) if isinstance(n, _ast.ImportFrom)
+                      and (n.module or "").endswith("llm") for a in n.names}
+            for n in _ast.walk(tree):
+                if not isinstance(n, _ast.Call):
+                    continue
+                fn = n.func
+                if isinstance(fn, _ast.Attribute) and fn.attr == "call":
+                    found.add(f.stem); break
+                if isinstance(fn, _ast.Name) and fn.id in direct:
+                    found.add(f.stem); break
+        _MODEL_CALLERS = found
+    return _MODEL_CALLERS
 
 
 def _breaker_blocks(agent):
@@ -196,7 +238,17 @@ def _breaker_blocks(agent):
     verify and status are exempt: they are how the fault gets reported, and
     silencing the reporter is how an outage becomes invisible.
     """
-    if agent in ("verify", "status", "report"):
+    # Only agents that actually call the model. The first version listed
+    # verify, status and report by hand, reasoning about who reports the
+    # fault and forgetting who does not need the API at all. So a dead key
+    # also stopped publish and crm, neither of which makes a single model
+    # call: nothing published for sixteen hours and the contact ingest went
+    # stale, while every run exited 0 and the breaker logged that it was
+    # working as designed.
+    #
+    # Derived from the source rather than maintained as a list, because the
+    # list was the bug.
+    if agent not in _model_callers():
         return False
     from core import llm
     tripped, reason = llm.breaker_state()

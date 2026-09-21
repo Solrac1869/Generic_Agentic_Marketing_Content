@@ -161,6 +161,61 @@ ATTRIB_RE = re.compile(
     re.I)
 
 
+
+#: Copy that sends the reader somewhere must say where.
+#:
+#: A LinkedIn video shipped on 14 September ending on the line "the full
+#: argument is in the article" over a card reading "Read: why AI pilots fail to
+#: scale", with no address anywhere on screen. The link was in the post
+#: caption, live and correctly tagged, but a viewer watching a video is not
+#: reading the caption -- and on LinkedIn it sits behind "see more".
+#:
+#: Nothing objected, because no rule had ever asked the question. qa_lint
+#: checked that a URL was well formed and never that one was present when the
+#: copy promised it.
+DANGLING_REFERENCE = re.compile(
+    # Each alternative anchors itself. An outer \b(...) wrapper was tried
+    # first and silently disabled every line-anchored branch, because \b
+    # cannot match before ^ -- the card that started this went on passing.
+    r"(?im)(?:"
+    r"in the (?:article|post|blog|guide|piece)\b"
+    r"|full (?:argument|story|breakdown|analysis|details?)\b"
+    r"|link in (?:bio|comments|the comments)\b"
+    r"|see the (?:article|post|blog)\b"
+    r"|details? (?:are )?(?:in|below)\b"
+    r"|more on this below\b"
+    # A directive, not prose. "Read: why AI pilots fail to scale" is a card;
+    # "I read the report last week" is a sentence, and flagging that would
+    # make the rule noise and get it switched off.
+    r"|^\s*read\b\s*[:\-\u2013]"
+    r"|^\s*read (?:the|more|it)\b"
+    r"|\bread more\b"
+    r")")
+
+#: Anything that gets a reader from here to there: a URL, a bare domain, or an
+#: explicit instruction that the link is elsewhere on purpose.
+HAS_DESTINATION = re.compile(
+    r"https?://|www\.[a-z0-9-]+\.[a-z]{2,}|[a-z0-9-]+\.(com|co\.uk|io|ai|org|net)/", re.I)
+
+
+
+#: First-person-plural ownership of the brand, on a channel written in a
+#: detached stance.
+#:
+#: Carl's personal LinkedIn doubles as a shop window while he is job-hunting.
+#: "Try our free audit" tells a recruiter he is selling his own thing; the
+#: same post as a practitioner passing on something useful reads as expertise.
+#: The stance is in expression.yaml and the prompt carries it, but a prompt is
+#: guidance and this is the check -- a model reverts to the house voice under
+#: any pressure, and nobody would notice for weeks.
+BRAND_POSSESSIVE = re.compile(
+    r"\b(?:our|my)\s+(?:free\s+)?"
+    r"(?:audit|assessment|framework|model|tool|platform|product|service|"
+    r"company|business|clients?|customers?|team|process|methodology)\b"
+    r"|\bwe\s+(?:built|help|offer|provide|created|designed|work with)\b"
+    r"|\btry\s+(?:our|my)\b", re.I)
+
+
 def check_source_attribution(item):
     """Return a FAIL string if the claim names a body the URL does not match."""
     claim = str(item.get("key_data_point") or "")
@@ -286,6 +341,61 @@ def _rec(severity, detail):
     return {"rule": _rule_key(detail), "severity": severity, "detail": detail}
 
 
+#: Spans that are links, not prose. House style applies to what a person
+#: reads, never to a url or a slug: three live slugs contain "ai-readiness",
+#: and rewriting one breaks the link and loses the UTM tracking on it.
+_LINK_SPANS = re.compile(
+    r"https?://\S+"
+    r"|\]\([^)]*\)"
+    r"|(?<![\w.])/[\w/-]+"
+    r"|(?<![\w.-])[\w-]{1,63}(?:\.[\w-]{1,63})*\.[a-z]{2,24}/[^\s)\]]*",
+    re.I)
+
+#: The brand writes its own terms open. Each of these is a single hyphen, and
+#: removing it cannot change what the sentence means.
+HOUSE_STYLE_TERMS = ("AI-transformation", "AI-readiness", "AI-adoption")
+
+
+def autocorrect(text):
+    """Repair the mechanical faults, so nothing is held over one hyphen.
+
+    A draft that says AI-readiness in prose is not a judgement failure, it is
+    a typo against a house rule, and holding a whole post for it costs a day
+    and a paid redraft to change one character. This does what the instruction
+    asked for, exactly as the em dash and invisible-character repairs already
+    do upstream.
+
+    Only prose is touched. Link spans are located first and left byte for
+    byte, so a CTA keeps its slug and its UTM parameters.
+
+    Only the hyphen is replaced, not the whole phrase, so "AI-Readiness" comes
+    back as "AI Readiness" rather than being silently recased.
+
+    Returns (text, notes).
+    """
+    if not text:
+        return text, []
+    out, notes, pos = [], [], 0
+    def fix(seg):
+        for term in HOUSE_STYLE_TERMS:
+            # (?!-) guards the right edge: \b matches inside a longer
+            # hyphenated token, so a bare slug written in prose with no domain
+            # and no leading slash -- "our ai-readiness-audit page" -- would
+            # come back half converted, which is worse than either original.
+            pat = re.compile(r"\b" + re.escape(term) + r"\b(?!-)", re.I)
+            n = len(pat.findall(seg))
+            if n:
+                seg = pat.sub(lambda m: m.group(0).replace("-", " "), seg)
+                notes.append("%s x%d" % (term, n))
+        return seg
+    for m in _LINK_SPANS.finditer(text):
+        out.append(fix(text[pos:m.start()]))
+        out.append(m.group(0))          # untouched
+        pos = m.end()
+    out.append(fix(text[pos:]))
+    return "".join(out), notes
+
+
 def lint_records(item, channel=None):
     """Every rule hit for one item, in the order the rules run.
 
@@ -317,6 +427,21 @@ def lint_records(item, channel=None):
     # following its own brief, which costs an Opus rewrite and then the item.
     _prose = re.sub(r"\]\([^)]*\)", "] ", _prose)      # markdown link targets
     _prose = re.sub(r"(?<![\w.])/[\w/-]+", " ", _prose)  # bare relative paths
+    # Absolute urls written without a scheme. Plain-text channels render the
+    # CTA as "example.com/ai-readiness-audit" with no scheme, and neither rule
+    # above can strip it: URL_RE needs http, and the relative-path rule's
+    # lookbehind refuses a slash preceded by a word character, which ".com/"
+    # always is. 2026-W39-41 was held for a full day over a hyphen that
+    # existed only inside that link, and the draft itself was clean.
+    # The tail takes the query string and fragment too: a UTM-tagged CTA like
+    # ".../audit?utm_campaign=ai-readiness-2026" is normal output here, and a
+    # class that stopped at "?" would hold a clean draft all over again. The
+    # leading (?<![\w.-]) anchor means only a real token start can begin a
+    # match, which also keeps this linear rather than quadratic on a long
+    # dotted run with no spaces.
+    _prose = re.sub(
+        r"(?<![\w.-])[\w-]{1,63}(?:\.[\w-]{1,63})*\.[a-z]{2,24}/[^\s)\]]*",
+        " ", _prose, flags=re.I)
     for _bad, _good in (("AI-transformation", "AI transformation"),
                         ("AI-readiness", "AI readiness"),
                         ("AI-adoption", "AI adoption")):
@@ -408,6 +533,48 @@ def lint_records(item, channel=None):
     # 5. CTA correctness
     if CONTACT_CTA_WRONG.search(text):
         out.append(_rec("fail", f"WRONG_CTA: contact URL must be {CORRECT_CONTACT_CTA}"))
+
+    # Promised a destination and gave none.
+    #
+    # The caption and the visual are checked separately, and both must carry
+    # the address. Checking them together would pass the case that started
+    # this: a LinkedIn video ending on "the full argument is in the article"
+    # with the URL only in the caption, where on LinkedIn it sits behind
+    # "see more" and a viewer watching a video never opens it. Someone who
+    # sees only the slides and someone who reads only the copy must each be
+    # able to get there.
+    # A channel written in a detached stance must not claim the brand.
+    if item.get("detached_stance"):
+        _own = BRAND_POSSESSIVE.search(text)
+        if _own:
+            out.append(_rec("fail",
+                            "BRAND_POSSESSIVE: %r on a channel that is not the "
+                            "brand's account. Refer to it the way you would "
+                            "refer to somebody else's useful tool."
+                            % _own.group(0).strip()))
+
+    # Searched per surface, not across both. Taking the first match in the
+    # concatenation meant a hold could read "the slides say 'read the article'"
+    # when that phrase was only ever in the caption, sending whoever has to fix
+    # it to the wrong artefact.
+    _seen = item.get("seen_text") or ""
+    _in_copy = DANGLING_REFERENCE.search(text)
+    _in_seen = DANGLING_REFERENCE.search(_seen)
+    _promise = _in_copy or _in_seen
+    if _promise:
+        _where = (_in_copy or _in_seen).group(0).strip()
+        if not HAS_DESTINATION.search(text):
+            out.append(_rec("fail",
+                            "DANGLING_REFERENCE: the copy says %r and carries "
+                            "no address. Whatever the slides show, the post "
+                            "itself has to link to it." % _where))
+        if _seen.strip() and not HAS_DESTINATION.search(_seen):
+            _vw = (_in_seen or _in_copy).group(0).strip()
+            out.append(_rec("fail",
+                            "DANGLING_REFERENCE_VISUAL: %r promises somewhere "
+                            "to go and the slides show no address. Someone "
+                            "watching without reading the caption has nowhere "
+                            "to go." % _vw))
 
     # 6. Naming Carl in customer-facing copy
     if CARL_NAMES.search(text) and presenter != "carl_authored":

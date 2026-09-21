@@ -36,6 +36,28 @@ caught before anyone pays to write 1,800 words around it. Gate 2 holds every
 rule that needs the finished text. By the time publishing runs, the only thing
 that can still go wrong is the channel itself.
 
+## What happens when a gate refuses something
+
+A gate that only refuses leaves you with a gap in the schedule and a file
+nobody opens. This one does not stop there:
+
+1. **Mechanical faults are repaired, not held.** Em dashes, invisible Unicode,
+   over-length posts and the house spellings are corrected before the gate
+   runs. Holding a whole post over one hyphen costs a day and a paid redraft
+   to change one character. Link spans are located first and left byte for
+   byte, so a call-to-action keeps its URL and its tracking parameters.
+2. **The draft goes back to the writer inside the same run**, with the exact
+   objection in the prompt rather than the same brief it already failed.
+   Three attempts, one for long-form.
+3. **If the subject itself will not pass, the slot gets a different subject**
+   and starts again. Same slot, same day, same channel. A replacement is
+   re-checked through Gate 1 and carries no statistic, because a model asked
+   to invent a figure will invent the citation to match it.
+
+Only then is an item held, and a hold raises a notification rather than
+waiting to be noticed. The point of planning a week ahead is that Monday
+morning is already signed off.
+
 ## What you need
 
 **Required**
