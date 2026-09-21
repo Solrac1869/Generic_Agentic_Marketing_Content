@@ -1060,7 +1060,8 @@ def check_email_render(brand):
     """
     import importlib.util
     out = []
-    script = pathlib.Path("/root/marketing-agents/bin/send-outbound-batch.py")
+    script = (pathlib.Path(__file__).resolve().parent.parent
+              / "bin" / "send-outbound-batch.py")
     if not script.exists():
         return [_r("email:render", WARN, "no outbound send script")]
     try:

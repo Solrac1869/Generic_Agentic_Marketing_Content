@@ -26,6 +26,7 @@ Exit 1 if any requirement is unmet.
 
 import ast
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -400,7 +401,22 @@ def _():
 #: unscheduled on a host that schedules nothing. Refusing is better than
 #: qualifying, because a qualified failure still reads as a failure.
 def _is_agent_host():
-    return pathlib.Path("/root/marketing-agents").exists() and ROOT == pathlib.Path("/root/marketing-agents")
+    """Is this the machine that actually runs the system?
+
+    Asked of the environment rather than a hardcoded path, because the path
+    belongs to whoever installed this. AGENTS_HOST_ROOT names the checkout
+    that runs cron; with it unset, a crontab mentioning this checkout is taken
+    as proof, which is true wherever it is installed.
+    """
+    declared = os.environ.get("AGENTS_HOST_ROOT")
+    if declared:
+        return ROOT == pathlib.Path(declared).resolve()
+    try:
+        crontab = subprocess.run(["crontab", "-l"], capture_output=True,
+                                 text=True, timeout=10).stdout
+    except Exception:
+        return False
+    return str(ROOT) in crontab
 
 
 def main():
@@ -411,7 +427,8 @@ def main():
               "the state directory. None of them exist here, so any answer\n"
               "would be about this machine rather than about the system.\n\n"
               "Run it where the system runs:\n"
-              "    ssh mkt 'cd /root/marketing-agents && python3 bin/conformance.py'\n\n"
+              "Run it on the host whose crontab schedules these agents:\n"
+              "    cd <checkout> && python3 bin/conformance.py\n\n"
               "--local checks only what can be read from the source, for\n"
               "editing. It is not authoritative.")
         return 2

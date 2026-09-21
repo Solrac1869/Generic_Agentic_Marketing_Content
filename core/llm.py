@@ -9,7 +9,13 @@ Server-side web search is available via call(..., web_search=True), which gives
 the research agent real, citable sources rather than model recall.
 """
 
+import os
 import datetime, json, os, pathlib, time, urllib.request, urllib.error
+
+#: Prefix on anything this sends to a person. Neutral by
+#: default; set BRAND_LABEL to your own.
+_LABEL = os.environ.get("BRAND_LABEL", "Marketing agents")
+
 
 API_URL = "https://api.anthropic.com/v1/messages"
 API_VERSION = "2023-06-01"
@@ -104,7 +110,7 @@ def _trip(code, body):
                "and the checks carry on: they make no model calls. Any "
                "successful call clears this automatically, so replacing the "
                "key is the whole fix." % ("HTTP %s: %s" % (code, body[:300])),
-               subject="ARP: the API account has stopped the agents")
+               subject=_LABEL + ": the API account has stopped the agents")
     except Exception:
         pass
 

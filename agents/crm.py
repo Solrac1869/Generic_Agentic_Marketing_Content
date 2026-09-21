@@ -33,7 +33,7 @@ import pathlib
 
 from core import brevo, leads
 
-STATE = pathlib.Path("/root/marketing-agents/state")
+STATE = pathlib.Path(__file__).resolve().parent.parent / "state"
 
 
 def _path(brand):

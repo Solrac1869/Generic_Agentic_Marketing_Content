@@ -22,6 +22,8 @@ would make those worse, not better.
     bin/run-chain.py sunday --dry-run     # print the order, run nothing
 """
 
+import os
+_LABEL = os.environ.get("BRAND_LABEL", "Marketing agents")
 import argparse
 import datetime
 import pathlib
@@ -132,7 +134,7 @@ def main():
                    "Completed: %s\n\nThe remaining steps did not run."
                    % (args.chain, i - 1, len(steps),
                       ", ".join(s[0] for s in steps[:i - 1])),
-                   subject="ARP: %s chain timed out" % args.chain)
+                   subject=_LABEL + ": %s chain timed out" % args.chain)
             return 1
 
         t0 = time.time()
@@ -161,7 +163,7 @@ def main():
                        "would have been built against no plan."
                        % (args.chain, agent, code, secs,
                           ", ".join(s[0] for s in steps[i:])),
-                       subject="ARP: %s chain stopped at %s" % (args.chain, agent))
+                       subject=_LABEL + ": %s chain stopped at %s" % (args.chain, agent))
                 return 1
 
     total = time.time() - started
@@ -171,7 +173,7 @@ def main():
                "None of them stop the chain, so everything after them ran. "
                "Worth a look."
                % (args.chain, len(failed), "\n  ".join(failed)),
-               subject="ARP: %s chain finished with %d failure(s)"
+               subject=_LABEL + ": %s chain finished with %d failure(s)"
                        % (args.chain, len(failed)))
     return 0
 

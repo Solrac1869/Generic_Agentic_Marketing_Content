@@ -40,6 +40,11 @@ import re
 import subprocess
 import os
 
+#: Prefix on anything this sends to a person. Neutral by
+#: default; set BRAND_LABEL to your own.
+_LABEL = os.environ.get("BRAND_LABEL", "Marketing agents")
+
+
 #: Who commits generated files. Neutral by default, because a fallback naming
 #: somebody else is worse than no fallback: it works in testing and is wrong
 #: for every other user. Override with AGENT_COMMIT_NAME / AGENT_COMMIT_EMAIL,
@@ -333,7 +338,7 @@ def run(brand, budget, dry_run=False, **kw):
         try:
             from agents.publish import notify
             notify("\n".join(lines),
-                   subject="ARP: %d fault(s) need you" % (len(escalate) + len(unfixed)))
+                   subject=_LABEL + ": %d fault(s) need you" % (len(escalate) + len(unfixed)))
         except Exception as e:
             # This is the only thing that tells a person a fault needs them.
             # Losing it to a bare exception type was the same shape as the

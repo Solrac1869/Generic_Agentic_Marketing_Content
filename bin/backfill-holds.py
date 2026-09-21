@@ -13,8 +13,9 @@ import os
 import pathlib
 import sys
 
-os.chdir("/root/marketing-agents")
-sys.path.insert(0, "/root/marketing-agents")
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+os.chdir(ROOT)
+sys.path.insert(0, str(ROOT))
 
 from core import qa_lint, performance
 from core.orchestrator import default_brand_id, load_brand

@@ -20,7 +20,7 @@ import subprocess
 import sys
 import tempfile
 
-ROOT = pathlib.Path("/root/marketing-agents")
+ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 OUT = pathlib.Path("/var/www/arp-dashboard/index.html")
 DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]

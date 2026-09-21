@@ -34,7 +34,7 @@ import re
 import urllib.error
 import urllib.request
 
-STATE = pathlib.Path("/root/marketing-agents/state")
+STATE = pathlib.Path(__file__).resolve().parent.parent / "state"
 USABLE = ("verified", "source_ok", "repaired")
 #: A claim is rechecked after this long. Links rot, and a source that was good
 #: in August can be a 404 by October.

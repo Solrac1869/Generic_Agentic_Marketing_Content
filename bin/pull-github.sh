@@ -22,9 +22,10 @@
 # When it declines it says which condition failed. A silent skip here would
 # reproduce the original bug in a new place.
 set -uo pipefail
-cd /root/marketing-agents || exit 1
+cd "$(dirname "$0")/.." || exit 1
+export AGENTS_ROOT="$(pwd)"
 
-LOG=/root/marketing-agents/state/backup.log
+LOG="$(pwd)/state/backup.log"
 mkdir -p "$(dirname "$LOG")"
 now() { date -u +%FT%TZ; }
 say() { echo "$(now) pull $*" >> "$LOG"; }
@@ -80,8 +81,9 @@ clash=$(comm -12 <(git diff --name-only | sort) \
 if [ -n "$clash" ]; then
     say "declined: $behind commit(s) waiting, local edits to ${clash//$'\n'/ }"
     python3 - "$behind" "${clash//$'\n'/, }" <<'PY' 2>/dev/null
-import sys
-sys.path.insert(0, "/root/marketing-agents")
+import os, sys
+_LABEL = os.environ.get("BRAND_LABEL", "Marketing agents")
+sys.path.insert(0, os.environ.get("AGENTS_ROOT", "."))
 try:
     from agents.publish import notify
     notify("GitHub has %s commit(s) the droplet has not taken, and the same "
@@ -90,7 +92,7 @@ try:
            "code than the repository says. Commit or discard those edits and "
            "it will catch up on its own within fifteen minutes."
            % (sys.argv[1], sys.argv[2]),
-           subject="ARP: droplet is behind and cannot catch up")
+           subject=_LABEL + ": droplet is behind and cannot catch up")
 except Exception:
     pass
 PY
@@ -152,14 +154,15 @@ rc=$?
 say "rc=$rc behind=$behind ${out//$'\n'/ }"
 [ "$rc" -eq 0 ] || {
     python3 - "$behind" "$out" <<'PY' 2>/dev/null
-import sys
-sys.path.insert(0, "/root/marketing-agents")
+import os, sys
+_LABEL = os.environ.get("BRAND_LABEL", "Marketing agents")
+sys.path.insert(0, os.environ.get("AGENTS_ROOT", "."))
 try:
     from agents.publish import notify
     notify("The droplet is %s commit(s) behind GitHub and the fast-forward "
            "failed.\n\n%s\n\nThe histories have diverged, so this needs a "
            "person." % (sys.argv[1], sys.argv[2][:600]),
-           subject="ARP: droplet cannot fast-forward")
+           subject=_LABEL + ": droplet cannot fast-forward")
 except Exception:
     pass
 PY

@@ -11,9 +11,10 @@
 # churns daily and is meant to be committed deliberately, with the code that
 # produced it.
 set -uo pipefail
-cd /root/marketing-agents || exit 1
+cd "$(dirname "$0")/.." || exit 1
+export AGENTS_ROOT="$(pwd)"
 
-LOG=/root/marketing-agents/state/backup.log
+LOG="$(pwd)/state/backup.log"
 mkdir -p "$(dirname "$LOG")"
 now() { date -u +%FT%TZ; }
 
@@ -24,11 +25,12 @@ now() { date -u +%FT%TZ; }
 alert() {
   set -a; . /etc/marketing-agents.env 2>/dev/null; set +a
   python3 - "$1" <<'PYALERT' 2>/dev/null
-import sys
-sys.path.insert(0, "/root/marketing-agents")
+import os, sys
+_LABEL = os.environ.get("BRAND_LABEL", "Marketing agents")
+sys.path.insert(0, os.environ.get("AGENTS_ROOT", "."))
 try:
     from agents.publish import notify
-    notify(sys.argv[1], subject="ARP: backup")
+    notify(sys.argv[1], subject=_LABEL + ": backup")
 except Exception:
     pass
 PYALERT

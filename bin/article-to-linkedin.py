@@ -19,7 +19,7 @@ import pathlib
 import re
 import sys
 
-ROOT = pathlib.Path("/root/marketing-agents")
+ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from core import llm, orchestrator, qa_lint, skills, utm  # noqa: E402

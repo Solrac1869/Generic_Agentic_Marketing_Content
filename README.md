@@ -89,6 +89,17 @@ cp config/brand.example.yaml   config/brand.yaml
 python3 setup.py
 ```
 
+Nothing assumes where you installed it: every script derives the repository
+root from its own location. Four optional environment variables change what it
+calls itself and who it commits as, and all four have neutral defaults:
+
+| Variable | Default | What it sets |
+|---|---|---|
+| `BRAND_LABEL` | `Marketing agents` | Prefix on every notification it sends you |
+| `AGENT_COMMIT_NAME` | `Content agent` | Author on commits it makes |
+| `AGENT_COMMIT_EMAIL` | `agent@localhost` | Email on those commits |
+| `NEVER_MAIL` | empty | Addresses the outbound sender must never contact |
+
 `setup.py` walks nine stages in dependency order and **verifies each one with a
 real call** — it will not mark your API key working because it looks like a
 key, it makes a request. Stop whenever you like and run it again; it re-checks

@@ -13,7 +13,13 @@ fifteen-minute one that ran six hours ago is not.
 Runs on a schedule and on demand: `--mode ask` answers a Telegram message.
 """
 
+import os
 import datetime, json, os, pathlib, re, subprocess
+
+#: Prefix on anything this sends to a person. Neutral by
+#: default; set BRAND_LABEL to your own.
+_LABEL = os.environ.get("BRAND_LABEL", "Marketing agents")
+
 
 
 # ── who notifications are to and from ───────────────────────────────
@@ -423,8 +429,8 @@ def run(brand, budget, dry_run=False, from_raw=False, mode=None, **kw):
         try:
             from core import brevo
             n = len(waiting)
-            subject = (f"ARP: {n} thing(s) waiting on you" if waiting
-                       else f"ARP: {len(stalled)} stalled")
+            subject = (f"{_LABEL}: {n} thing(s) waiting on you" if waiting
+                       else f"{_LABEL}: {len(stalled)} stalled")
             _mid, _err = brevo.send_transactional(
                 to, _recipient_name(brand), subject, body,
                 sender={"name": "ARP agents",

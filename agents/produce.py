@@ -18,10 +18,16 @@ Design decisions worth knowing:
 * Nothing here publishes. It only writes files.
 """
 
+import os
 import datetime
 import re, json, pathlib
 from core import weeks, skills
 from core import hero_image, llm, qa_lint, utm
+
+#: Prefix on anything this sends to a person. Neutral by
+#: default; set BRAND_LABEL to your own.
+_LABEL = os.environ.get("BRAND_LABEL", "Marketing agents")
+
 
 SYSTEM = """You write for a specific B2B brand. You follow its voice rules
 exactly, they are not suggestions, and a draft that breaks one is discarded.
@@ -919,7 +925,7 @@ def run(brand, budget, dry_run=False, from_raw=False, only_channel=None, **kw):
                                               ((last_record.get(i["id"]) or [{}])[0]
                                                .get("fails") or ["?"])[0])
                                           for i in stuck)),
-                                   subject="ARP: a slot could not be filled")
+                                   subject=_LABEL + ": a slot could not be filled")
                         except Exception as e:
                             print(f"    could not send the alert: {type(e).__name__}")
 

@@ -8,6 +8,10 @@
 #   run-agent.sh <agent> [extra args...]
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
+# Exported so the inline python below finds the agents package without
+# a hardcoded path. The script already derives this; it just was not
+# passed on.
+export AGENTS_ROOT="$(pwd)"
 
 ENV_FILE=/etc/marketing-agents.env
 # Only used by the fallback that fetches credentials over ssh when this
@@ -36,11 +40,12 @@ fi
 # nothing can be done about it is the weakest kind of alert there is.
 alert() {
   python3 - "$1" <<PY 2>/dev/null
-import sys
-sys.path.insert(0, "/root/marketing-agents")
+import os, sys
+sys.path.insert(0, os.environ["AGENTS_ROOT"])
+_LABEL = os.environ.get("BRAND_LABEL", "Marketing agents")
 try:
     from agents.publish import notify
-    notify(sys.argv[1], subject="ARP: an agent failed")
+    notify(sys.argv[1], subject=_LABEL + ": an agent failed")
 except Exception:
     pass
 PY

@@ -10,9 +10,10 @@
 # them. It never commits, never touches the working tree, and a push with
 # nothing to do costs a few milliseconds, so it can run often.
 set -uo pipefail
-cd /root/marketing-agents || exit 1
+cd "$(dirname "$0")/.." || exit 1
+export AGENTS_ROOT="$(pwd)"
 
-LOG=/root/marketing-agents/state/backup.log
+LOG="$(pwd)/state/backup.log"
 mkdir -p "$(dirname "$LOG")"
 now() { date -u +%FT%TZ; }
 
@@ -34,14 +35,15 @@ echo "$(now) sync rc=$rc ahead=$ahead ${out//$'\n'/ }" >> "$LOG"
 # decision rather than only report one, and an alert saying the only copy of
 # the work is on this droplet is the last one that should go to a dead channel.
 python3 - "$ahead" "$out" <<'PY' 2>/dev/null
-import sys
-sys.path.insert(0, "/root/marketing-agents")
+import os, sys
+_LABEL = os.environ.get("BRAND_LABEL", "Marketing agents")
+sys.path.insert(0, os.environ.get("AGENTS_ROOT", "."))
 try:
     from agents.publish import notify
     notify("The droplet is %s commit(s) ahead of GitHub and the push failed.\n\n"
            "%s\n\nUntil this succeeds the only copy of that work is on the "
            "droplet." % (sys.argv[1], sys.argv[2][:600]),
-           subject="ARP: code is not backed up")
+           subject=_LABEL + ": code is not backed up")
 except Exception:
     pass
 PY

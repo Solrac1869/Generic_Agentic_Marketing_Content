@@ -17,11 +17,13 @@ Read only against Search Console.
 import argparse
 import datetime
 import os
+import pathlib
 import sys
 import time
 
-os.chdir("/root/marketing-agents")
-sys.path.insert(0, "/root/marketing-agents")
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+os.chdir(ROOT)
+sys.path.insert(0, str(ROOT))
 
 from agents.seo import fetch_ranks, settled_window, GSC_WINDOW_DAYS
 from core import performance

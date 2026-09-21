@@ -32,7 +32,7 @@ import time
 import urllib.error
 import urllib.request
 
-ROOT = pathlib.Path("/root/marketing-agents")
+ROOT = pathlib.Path(__file__).resolve().parent.parent
 # Running this by path puts bin/ on sys.path, not the project root, so the
 # Telegram notify import below fails without this.
 sys.path.insert(0, str(ROOT))
