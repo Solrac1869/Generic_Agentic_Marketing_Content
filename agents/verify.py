@@ -26,7 +26,21 @@ import datetime
 import hashlib, json, os, pathlib, re, subprocess, time, urllib.request
 import urllib.error
 from core import weeks
+
+
 from core import settings as _s
+
+
+def _own_domain(brand=None):
+    """This brand's bare domain, for telling our links from other people's.
+
+    Empty when no site is configured, and every caller treats empty as "do not
+    check" rather than "matches everything".
+    """
+    site = _s.get(brand, "site", "")
+    return str(site).split("//")[-1].strip("/").split("/")[0] if site else ""
+
+
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OK, WARN, FAIL = "ok", "warn", "FAIL"
@@ -113,11 +127,11 @@ def check_rules_self_test():
     """
     from core import qa_lint
     # (text, presenter_type). The naming rule is deliberately exempt for
-    # carl_authored, which is how a blog byline is allowed, so testing it under
+    # self_authored, which is how a blog byline is allowed, so testing it under
     # that presenter would assert the opposite of the intended behaviour.
     must_fail = {
-        "em dash": ("The audit takes 7 minutes — and it is free.", "carl_authored"),
-        "wrong duration": ("The audit takes 10 minutes.", "carl_authored"),
+        "em dash": ("The audit takes 7 minutes — and it is free.", "self_authored"),
+        "wrong duration": ("The audit takes 10 minutes.", "self_authored"),
     # A long one as well. The short fixture above passed while the rule was
     # silently scoped to a 60 character window, so a 234 character post making
     # the same false claim published unchecked. A guard whose only fixture is
@@ -126,11 +140,11 @@ def check_rules_self_test():
         "Most SMEs think AI readiness is a technology problem. It is not. We "
         "built an audit that shows you exactly where you stand across six "
         "pillars, and it scores you out of 120 so you can see the gap in black "
-        "and white. It takes 30 minutes.", "carl_authored"),
-        "banned phrase": ("This is a game-changer for your business.", "carl_authored"),
-        "names the founder": ("Carl will walk you through the results.", "brand_narrator"),
-        "model meta commentary": ("I need to flag a conflict in your instructions before proceeding.", "carl_authored"),
-        "wrong authority claim": ("Built by an operator with 20+ years of experience.", "carl_authored"),
+        "and white. It takes 30 minutes.", "self_authored"),
+        "banned phrase": ("This is a game-changer for your business.", "self_authored"),
+        "names the founder": ("Sam will walk you through the results.", "brand_narrator"),
+        "model meta commentary": ("I need to flag a conflict in your instructions before proceeding.", "self_authored"),
+        "wrong authority claim": ("Built by an operator with 20+ years of experience.", "self_authored"),
         "first person claim": ("I spent six months fixing their data warehouse.", "brand_narrator"),
         "fabricated role": ("I'm the operations director of a 50-person engineering firm.", "brand_narrator"),
         "founder authority in a synthetic mouth": ("With 20 years of experience I can tell you this fails.", "brand_narrator"),
@@ -153,7 +167,7 @@ def check_rules_self_test():
         out.append(_r(f"rule:{name}", OK if fails else FAIL,
                       "caught" if fails else "NOT CAUGHT, rule is broken"))
     for name, text in must_pass.items():
-        fails, _ = qa_lint.lint({"text": text, "presenter_type": "carl_authored"}, channel=None)
+        fails, _ = qa_lint.lint({"text": text, "presenter_type": "self_authored"}, channel=None)
         out.append(_r(f"rule:{name}", OK if not fails else FAIL,
                       "clean" if not fails else f"false positive: {fails[0][:70]}"))
     # extract_json once returned a nested item instead of its container,
@@ -390,7 +404,7 @@ def check_site(brand):
     for path in ("", "/blog"):
         try:
             req = urllib.request.Request(site + path,
-                                         headers={"User-Agent": "arp-verify/1.0"})
+                                         headers={"User-Agent": "verify-bot/1.0"})
             with urllib.request.urlopen(req, timeout=25) as r:
                 body = r.read().decode(errors="ignore")
             out.append(_r(f"site:{path or '/'}", OK if r.status == 200 else FAIL,
@@ -400,20 +414,16 @@ def check_site(brand):
 
     # Is the newest commit actually deployed? A push that never built is
     # indistinguishable from a successful one without checking the page.
-    # No default repo path. A hardcoded one points at whoever built this
-    # first, and a check that silently reads the wrong directory is worse than
-    # one that says it cannot run.
-    _blog = brand.get("channels", {}).get("blog", {}) or {}
-    _repo = _blog.get("droplet_repo")
-    cdir = (pathlib.Path(_repo) / _blog.get("content_dir", "src/content/blog")
-            if _repo else None)
-    if cdir and cdir.exists():
+    repo = pathlib.Path(brand.get("channels", {}).get("blog", {})
+                        .get("working_copy") or "")
+    cdir = repo / brand.get("channels", {}).get("blog", {}).get("content_dir", "src/content/blog")
+    if cdir.exists():
         live_posts = [f.stem for f in cdir.glob("*.md") if "draft: true" not in f.read_text()]
         missing = []
         for slug in live_posts[-4:]:
             try:
                 req = urllib.request.Request(f"{site}/blog/{slug}",
-                                             headers={"User-Agent": "arp-verify/1.0"})
+                                             headers={"User-Agent": "verify-bot/1.0"})
                 with urllib.request.urlopen(req, timeout=25) as r:
                     if r.status != 200:
                         missing.append(slug)
@@ -476,7 +486,7 @@ def check_article_render(brand):
     def status(url):
         try:
             req = urllib.request.Request(
-                url, method="HEAD", headers={"User-Agent": "arp-verify/1.0"})
+                url, method="HEAD", headers={"User-Agent": "verify-bot/1.0"})
             return urllib.request.urlopen(req, timeout=20).status
         except urllib.error.HTTPError as e:
             return e.code
@@ -489,7 +499,7 @@ def check_article_render(brand):
         slug = url.split("/blog/")[-1]
         try:
             req = urllib.request.Request(
-                url, headers={"User-Agent": "arp-verify/1.0"})
+                url, headers={"User-Agent": "verify-bot/1.0"})
             with urllib.request.urlopen(req, timeout=25) as r:
                 code, html = r.status, r.read().decode("utf-8", "replace")
         except Exception as e:
@@ -621,11 +631,8 @@ def check_published_output(brand):
         if fails:
             bad += 1
             offenders.append("%s (%s)" % (iid, fails[0].split(":")[0]))
-        # Our own links are the ones that must carry UTM parameters; a link
-        # to someone else's site is not ours to tag.
-        _own = _s.site(brand).split("//", 1)[-1].strip("/")
         for url in re.findall(r"https?://[^\s\)]+", body):
-            if _own and _own in url:
+            if _own_domain(brand) and _own_domain(brand) in url:
                 links += 1
                 if "utm_" not in url:
                     untagged += 1
@@ -694,6 +701,47 @@ def check_schedule():
 
 
 # ─── Entry point ───────────────────────────────────────────────────
+
+
+def check_plan_holds(brand):
+    """Items sitting held, and for how long.
+
+    A hold used to be permanent: strategy wrote status="held" and nothing in
+    the system ever wrote it back, so a held item was silently dropped from
+    the week without anyone deciding to drop it. Four articles were lost that
+    way for three days and the only visible symptom was a dashboard saying
+    "not published yet" next to every one of them.
+
+    Holds are now re-judged by brief_lint.reassess on every produce run, so a
+    hold that survives that is a real, current failure that reassessment could
+    not clear on its own. That is what this reports, and what remedy acts on.
+    Reporting the count is not enough -- the rules are named, because the
+    remedy for a duplicate title is not the remedy for a dead link.
+    """
+    out, bdir = [], brand["_dir"]
+    week = weeks.current_week()
+    brief = bdir / "briefs" / (week + ".json")
+    if not brief.exists():
+        return [_r("plan:held", WARN, "no brief for " + week)]
+    try:
+        items = json.loads(brief.read_text()).get("items", [])
+    except Exception as e:
+        return [_r("plan:held", FAIL, "brief unreadable: %s" % type(e).__name__)]
+
+    held = [i for i in items if i.get("status") == "held"]
+    if not held:
+        return [_r("plan:held", OK, "nothing held in " + week)]
+
+    rules = {}
+    for i in held:
+        m = re.search(r"gate1:\s*([A-Z_]+)", str(i.get("hold_reason") or ""))
+        rules[m.group(1) if m else "UNKNOWN"] = rules.get(
+            m.group(1) if m else "UNKNOWN", 0) + 1
+    summary = ", ".join("%s x%d" % (k, v) for k, v in sorted(rules.items()))
+    out.append(_r("plan:held", FAIL,
+                  "%d item(s) held in %s after re-assessment: %s"
+                  % (len(held), week, summary)))
+    return out
 
 
 def check_calendar(brand):
@@ -1060,8 +1108,7 @@ def check_email_render(brand):
     """
     import importlib.util
     out = []
-    script = (pathlib.Path(__file__).resolve().parent.parent
-              / "bin" / "send-outbound-batch.py")
+    script = ROOT / "bin" / "send-outbound-batch.py"
     if not script.exists():
         return [_r("email:render", WARN, "no outbound send script")]
     try:
@@ -1141,11 +1188,9 @@ def check_email_render(brand):
         except (ValueError, OSError):
             continue
         for para in d.get("body", "").split("\n\n"):
-            # A signature block is the one paragraph allowed internal
-            # newlines. Whose name it carries is per brand, not hardcoded.
-            _sig = (_s.author(brand) or _s.recipient_name(brand) or "").strip()
-            if ("\n" in para.strip()
-                    and not (_sig and para.strip().startswith(_sig))):
+            _byline = _s.author(brand) or ""
+        if "\n" in para.strip() and not (
+                _byline and para.strip().startswith(_byline)):
                 broken.append(f.stem)
                 break
     out.append(_r("email:sequence_copy", FAIL if broken else OK,
@@ -1589,6 +1634,7 @@ def run(brand, budget, dry_run=False, from_raw=False, mode=None, **kw):
                      (check_article_render, (brand,)),
                      (check_published_output, (brand,)), (check_schedule, ()),
                     (check_calendar, (brand,)),
+                    (check_plan_holds, (brand,)),
                     (check_performance_store, (brand,)),
                     (check_veto_reasons, (brand,)),
                     (check_rank_series, (brand,)),

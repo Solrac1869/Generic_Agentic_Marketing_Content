@@ -1,0 +1,63 @@
+# Who you are. Copy to config/brand.yaml and edit.
+#
+# This file is the ceiling on the quality of everything the system produces.
+# A vague audience and a generic voice produce confident, generic copy forever.
+# Credentials never go here — they live in .env and are referred to by name.
+
+name: Acme Consulting
+site: https://acme.example.com
+
+# Whose byline goes on an article. Omit it entirely and the publisher leaves
+# the field out rather than inventing an author.
+author: A. N. Operator
+
+audience:
+  segment: operations directors at 50-500 person manufacturers
+  # What they already believe, so the agents argue with it rather than past it.
+  believes: that automation is a capital project, not an operating change
+  # What actually keeps them awake. Be specific; "efficiency" is not a problem.
+  problem: they cannot tell which of their processes is the expensive one
+
+voice:
+  sound_like: a practitioner who has done the work, not a vendor
+  # A byline used when a channel publishes under a person rather than a company.
+  byline: A. N. Operator
+  # Say these plainly. Each one is a rule the quality gate enforces.
+  never:
+    - never claim a result you cannot source
+    - never use "game-changer", "leverage" or "unlock"
+    - never open a post with a rhetorical question
+
+# The three or four arguments you make repeatedly. Fewer than two and every
+# week reads the same, which the setup check will refuse.
+pillars:
+  - id: diagnosis_first
+    description: Questions that make a leader audit their own operation
+  - id: myth_busting
+    description: Advice that is widely repeated and wastes money
+  - id: hard_numbers
+    description: Statistics with a named, checkable source
+  - id: one_thing_today
+    description: A single specific action a reader can take this week
+
+ctas:
+  default: primary
+  primary: https://acme.example.com/assess
+  contact: https://acme.example.com/contact
+
+# Names that must never appear in customer-facing copy. Empty disables the
+# rule, which is the right default.
+operator_names: []
+
+notify:
+  to: you@example.com
+  to_name: ""
+  from_name: Content agents
+  from_email: agents@example.com
+  # Where a person goes to approve things. Empty means there is no board.
+  board_url: ""
+
+publishing:
+  # Items needing a human yes before they go out, by action type. Empty means
+  # the system publishes without asking.
+  require_explicit_approval: []

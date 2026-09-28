@@ -35,7 +35,7 @@ for _iid, _e in _store.get("items", {}).items():
     for _o in _e.get("observations", []):
         if _o.get("source") == "qa_hold" and (_o.get("metrics") or {}).get("backfilled"):
             already.add(_iid)
-OUT = pathlib.Path("brands/arp/outputs")
+OUT = ROOT / "brands" / default_brand_id() / "outputs"
 
 items, obs = [], []
 summary = {}

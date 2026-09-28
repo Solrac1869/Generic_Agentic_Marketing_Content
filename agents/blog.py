@@ -422,13 +422,17 @@ def _record_published_url(brand, week, item_id, slug):
     f = brand["_dir"] / "briefs" / (week + ".json")
     url = site + "/blog/" + slug
     try:
-        plan = json.loads(f.read_text())
-        for i in plan.get("items", []):
-            if i.get("id") == item_id:
-                i["published_slug"] = slug
-                i["published_url"] = url
-                break
-        f.write_text(json.dumps(plan, indent=2))
+        # The shared lock, not this agent's own: a plain write_text here can
+        # be overwritten by a writer holding a copy loaded minutes ago, and
+        # blog selects work by "no published_url" -- so losing this write
+        # publishes the same article a second time.
+        from core import brief_io
+        with brief_io.update(f) as plan:
+            for i in plan.get("items", []):
+                if i.get("id") == item_id:
+                    i["published_slug"] = slug
+                    i["published_url"] = url
+                    break
         return url
     except Exception as e:
         print("  WARNING: could not record the url for " + str(item_id)
@@ -614,7 +618,7 @@ def run(brand, budget, dry_run=False, from_raw=False, mode=None, **kw):
     if not isinstance(art, dict) or not art.get("body"):
         return f"could not parse an article from the reply. See {raw_path}"
 
-    # The byline is Carl's, which is why first-person is permitted here and not
+    # The byline is the operator's, which is why first-person is permitted here and not
     # on social. presenter_type tells the linter that.
     # produce strips this before it lints; blog never did. The model writes a
     # double hyphen for an em dash, HUMANISE_EM_DASH holds the whole article,
@@ -626,7 +630,7 @@ def run(brand, budget, dry_run=False, from_raw=False, mode=None, **kw):
         print("  removed %d invisible character(s) before QA" % _inv)
     fails, warns = qa_lint.lint(
         {"text": art.get("body", ""), "source_url": "research",
-         "presenter_type": "carl_authored"}, channel=None)
+         "presenter_type": "self_authored"}, channel=None)
 
     out_dir = bdir / "outputs" / week / "blog"
     out_dir.mkdir(parents=True, exist_ok=True)

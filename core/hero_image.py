@@ -15,24 +15,6 @@ Needs rsvg-convert and cwebp, both small.
 
 import pathlib, re, subprocess, tempfile
 
-
-def _wordmark(brand=None):
-    """The small text drawn in the corner of a rendered image.
-
-    A brand can set this explicitly; most will want their bare domain, which
-    is what a reader recognises at thumbnail size. Empty draws nothing, and
-    drawing nothing is correct: a blank corner is unremarkable, somebody
-    else's domain on your image is not.
-    """
-    from core import settings
-    explicit = settings.get(brand, "wordmark")
-    if explicit:
-        return str(explicit)
-    site = settings.get(brand, "site", "")
-    return str(site).split("//")[-1].strip("/") if site else ""
-
-
-
 # The palette lives in brand.yaml under art_direction, so the video renderer
 # and anything added later share it. These literals remain as a fallback: a
 # missing config key must not stop an image being made.
@@ -109,9 +91,16 @@ def _wrap(text, per_line):
     return lines
 
 
-def build_svg(title, subtitle, slug):
+def build_svg(title, subtitle, slug, signature=""):
+    """The article hero. `signature` is the line along the bottom -- a brand
+    name, a byline, or nothing. Empty by default and supplied by the caller
+    from config, because a default here signs every buyer's images with
+    whoever wrote the code."""
     name = ORDER[sum(ord(c) for c in slug) % len(ORDER)]
     described, art = ART[name]
+    sig_svg = (f'<text x="72" y="{H - 54}" font-family="{SANS}" font-size="21" '
+               f'fill="{CREAM}" opacity="0.72">{_esc(signature)}</text>'
+               if signature else "")
 
     # Fit the whole title. Step the size down until it fits in four lines
     # rather than truncating, because a chopped headline is worse than a
@@ -149,14 +138,13 @@ def build_svg(title, subtitle, slug):
   </g>
   {title_svg}
   {sub_svg}
-  <text x="72" y="{H - 54}" font-family="{SANS}" font-size="21" fill="{CREAM}"
-        opacity="0.72">AI Readiness Partner</text>
-</svg>''', f"{_esc(title)}. AI Readiness Partner. A faded gold line-art drawing of {described} sits to the right of the title."
+  {sig_svg}
+</svg>''', f"{_esc(title)}.{(' ' + signature) if signature else ''} A faded gold line-art drawing of {described} sits to the right of the title."
 
 
-def render(title, slug, out_path, subtitle=""):
+def render(title, slug, out_path, subtitle="", signature=""):
     """Write a WebP hero image. Returns (path, alt_text)."""
-    svg, alt = build_svg(title, subtitle, slug)
+    svg, alt = build_svg(title, subtitle, slug, signature)
     out = pathlib.Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
 
@@ -204,8 +192,18 @@ def _key_line(text, limit=170):
     return (usable[0] if usable else sentences[0])[:limit]
 
 
-def social_card(text, slug, out_path, kicker="AI READINESS PARTNER"):
-    """A branded quote card for a social post. Returns (path, alt_text)."""
+def social_card(text, slug, out_path, kicker="", footer="", signature=""):
+    """A quote card for a social post. Returns (path, alt_text).
+
+    All three identity fields default to empty, and the caller supplies them
+    from config. They are arguments rather than constants because a personal
+    account is not the company account: one carries a company name and a
+    domain, the other carries a person and no domain at all. A default here
+    would be a brand-shaped default -- it works for whoever wrote it and
+    silently stamps their name on everybody else's posts. The first
+    thing a reader actually looks at had not, which is most of why the posts
+    did not read as any different.
+    """
     line = _key_line(text)
     name = ORDER[sum(ord(c) for c in slug) % len(ORDER)]
     described, art = ART[name]
@@ -223,6 +221,10 @@ def social_card(text, slug, out_path, kicker="AI READINESS PARTNER"):
         f'font-size="{size}" fill="{CREAM}">{_esc(l)}</text>'
         for i, l in enumerate(lines))
 
+    footer_svg = (
+        f'<text x="70" y="{SOCIAL_H - 52}" font-family="{SANS}" font-size="19"'
+        f' fill="{CREAM}" opacity="0.66">{_esc(footer)}</text>' if footer else "")
+
     svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{SOCIAL_W}" height="{SOCIAL_H}" viewBox="0 0 {SOCIAL_W} {SOCIAL_H}">
   <rect width="{SOCIAL_W}" height="{SOCIAL_H}" fill="{INK}"/>
   <g transform="translate(900,170) scale(0.62)" fill="none" stroke="{GOLD}"
@@ -233,8 +235,7 @@ def social_card(text, slug, out_path, kicker="AI READINESS PARTNER"):
         fill="{GOLD}">{_esc(kicker)}</text>
   <rect x="70" y="96" width="64" height="2" fill="{GOLD}"/>
   {body_svg}
-  <text x="70" y="{SOCIAL_H - 52}" font-family="{SANS}" font-size="19"
-        fill="{CREAM}" opacity="0.66">{_wordmark(brand)}</text>
+  {footer_svg}
   <rect x="0" y="{SOCIAL_H-7}" width="{SOCIAL_W}" height="7" fill="{GOLD}" opacity="0.85"/>
 </svg>'''
 
@@ -251,6 +252,6 @@ def social_card(text, slug, out_path, kicker="AI READINESS PARTNER"):
         pathlib.Path(png_path).replace(out)
     finally:
         pathlib.Path(svg_path).unlink(missing_ok=True)
-    alt = (f"{line} AI Readiness Partner. A faded gold line-art drawing of "
-           f"{described} sits to the right.")
+    alt = (f"{line} {signature} A faded gold line-art drawing of "
+           f"{described} sits to the right.").replace("  ", " ")
     return out, alt[:420]

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Record that a human has approved the outbound email, as it renders.
 
-This exists because of 1 Sept 2026. Carl approved the copy on 30 August. The
+This exists because of 1 Sept 2026. The operator approved the copy. The
 words never changed and were never meant to. What changed afterwards was the
 renderer: a fix for the signature turned every source line wrap into a line
 break, and thirteen prospects received a message split across nine ragged
@@ -62,7 +62,7 @@ def record_path(brand):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--brand", default="arp")
+    ap.add_argument("--brand", default=None)
     ap.add_argument("--approve", action="store_true")
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--show", action="store_true")

@@ -12,8 +12,7 @@ writing one class and naming it in channels.yaml. No agent changes.
 
     publisher: git        -> publishers/git_site.py
     publisher: webhook    -> publishers/webhook.py
-    publisher: linkedin   -> publishers/linkedin.py
-    publisher: x          -> publishers/x.py
+    publisher: local      -> publishers/local_files.py
 
 Two rules every publisher keeps, because breaking either one has cost real
 money in the system this was extracted from:
@@ -96,9 +95,13 @@ REGISTRY = {
     "git": "core.publishers.git_site",
     "webhook": "core.publishers.webhook",
     "local": "core.publishers.local_files",
-    "linkedin": "core.publishers.linkedin",
-    "x": "core.publishers.x",
 }
+# Social publishing is not here. It lives in agents/publish.py, which holds the
+# per-network upload flows (LinkedIn's three-step video upload, X's media
+# endpoints) because those are sequences rather than single calls. This
+# registry previously advertised "linkedin" and "x" entries pointing at modules
+# that do not exist: setting either in config raised ImportError at the moment
+# of publishing, which is the worst time to learn a destination is fictional.
 
 
 def load(channel_config, env=None):

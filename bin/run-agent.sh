@@ -83,7 +83,7 @@ echo "$START --- $AGENT $* ---" >> "$LOG"
 # a line beginning with a $(date) substitution, so it always logged the exit
 # code of date, which is to say always zero. Four consecutive failures were
 # recorded as successes.
-python3 core/orchestrator.py --brand arp --agent "$AGENT" "$@" >> "$LOG" 2>&1
+python3 core/orchestrator.py --brand "${BRAND_ID:-}" --agent "$AGENT" "$@" >> "$LOG" 2>&1
 rc=$?
 
 NOW="$(date -u +%FT%TZ)"

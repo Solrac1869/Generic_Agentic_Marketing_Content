@@ -56,7 +56,7 @@ python3 bin/_debrand_helpers.py        | tail -2
 echo
 echo "== 4. proving it =="
 fail=0
-python3 bin/debrand-report.py || fail=1
+python3 bin/debrand-report.py --strict || fail=1
 echo
 echo "undefined names:"
 python3 bin/_check_undefined.py . && echo "  none"

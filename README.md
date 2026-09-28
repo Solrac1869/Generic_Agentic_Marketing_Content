@@ -1,8 +1,8 @@
 # Agentic Marketing Content
 
-Eighteen agents that research, plan, write, check and publish a week of
-marketing content on their own, on one small server, for roughly $10–15 a week
-in model spend.
+Nineteen agents that research, plan, write, check, publish **and repair** a
+week of marketing content on their own, on one small server, for roughly $10–15
+a week in model spend.
 
 This is not a prompt library and not a wrapper around a chat window. It is a
 production system with a plan, two quality gates, a schedule, a measurement
@@ -54,9 +54,38 @@ nobody opens. This one does not stop there:
    re-checked through Gate 1 and carries no statistic, because a model asked
    to invent a figure will invent the citation to match it.
 
-Only then is an item held, and a hold raises a notification rather than
-waiting to be noticed. The point of planning a week ahead is that Monday
-morning is already signed off.
+Only then is an item held — and a hold is **not permanent**. Every hold is
+re-judged at the top of each run: if the condition that caused it has cleared,
+the item is released and drafted on that same run. A hold that survives
+re-assessment is a live failure, and that is what the repair loop below acts on.
+
+## It repairs itself
+
+Most systems of this kind stop at "reported". This one does not:
+
+```
+verify  finds it   →  remedy  fixes it  →  re-checks  →  status tells you
+```
+
+`verify` runs over a hundred checks. `remedy` reads that verdict and acts, under
+three rules: a remedy is registered per check or nothing happens, a remedy must
+re-check because running a fix is not evidence it worked, and it gets two
+attempts a day before escalating and going quiet.
+
+Anything needing a credential, changing the schedule, spending outside budget,
+or touching what has already published is never repaired automatically. Those
+always reach a person.
+
+There is also a check on the system's own honesty:
+
+```bash
+python3 bin/conformance.py
+```
+
+`verify` asks "is it working now". `conformance` asks "is this still the system
+it was asked to be" — parsing the source rather than grepping it, so a quality
+gate that exists but is never called is reported as what it is, rather than
+counting as coverage.
 
 ## What you need
 
@@ -84,8 +113,10 @@ stop expecting it. A setup with only LinkedIn and a blog is a valid setup.
 ```bash
 git clone <your-copy-of-this-repo> content-agents
 cd content-agents
-cp config/channels.example.yaml config/channels.yaml
-cp config/brand.example.yaml   config/brand.yaml
+cp config/brand.example.yaml      config/brand.yaml
+cp config/channels.example.yaml   config/channels.yaml
+cp config/expression.example.yaml config/expression.yaml
+cp .env.example .env
 python3 setup.py
 ```
 

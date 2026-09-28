@@ -14,7 +14,7 @@ Remotion stays available for set pieces. This is the everyday path.
 """
 
 import datetime, json, os, pathlib, re, subprocess, urllib.request
-from core import weeks, skills
+from core import weeks, skills, settings
 from core import hero_image, llm, qa_lint, utm, video_config, video_providers
 
 ELEVEN_URL = "https://api.elevenlabs.io/v1/text-to-speech/{voice}"
@@ -141,7 +141,7 @@ def render(script, slug, workdir, brand):
             continue
         img = workdir / f"s{i}.png"
         hero_image.social_card(onscreen, f"{slug}-{i}", img,
-                               kicker="AI READINESS PARTNER")
+                               kicker=str(settings.get(brand, "name", "") or "").upper())
         mp3 = _speak(narration, workdir / f"s{i}.mp3")
         clip, secs = _scene_clip(img, mp3, workdir / f"s{i}.mp4")
         clips.append(clip)

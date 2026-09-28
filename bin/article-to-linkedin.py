@@ -7,7 +7,7 @@ A native long-form post is, and it is the better trade anyway: full reach with
 no outbound link penalty, and the article link sits at the end as a footnote
 rather than being the reason the post exists.
 
-Written for a channel that carries a `stance`, which for Carl's personal
+Written for a channel that carries a `stance`, which for the operator's personal
 account means the post reads as a practitioner passing on something useful, not
 as the company selling. That is the whole point of the exercise.
 """
@@ -57,7 +57,7 @@ def main():
     # new year and that has been wrong here before.
     ap.add_argument("--week",
                     default=datetime.date.today().strftime("%G-W%V"))
-    ap.add_argument("--brand", default="arp")
+    ap.add_argument("--brand", default=None)
     args = ap.parse_args()
 
     brand = orchestrator.load_brand(args.brand)

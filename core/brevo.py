@@ -72,7 +72,7 @@ def call(method, path, payload=None, retries=3):
                      # "access denied". /v3/senders is one, which is why the
                      # sender verification check has only ever managed a
                      # warning.
-                     "user-agent": "arp-marketing-agents/1.0"})
+                     "user-agent": "marketing-agents/1.0"})
         try:
             with urllib.request.urlopen(req, timeout=45) as r:
                 body = r.read().decode()
@@ -242,7 +242,7 @@ def send_transactional(to_email, to_name, subject, html_content,
     operational message to one person, which is a different thing and should
     not land in campaign statistics.
     """
-    sender = sender or {"name": "AI Readiness Partner",
+    sender = sender or {"name": os.environ.get("SENDER_NAME", "Content agents"),
                         "email": os.environ.get("SENDER_EMAIL", "")}
     payload = {"sender": sender,
                "to": [{"email": to_email, "name": to_name or to_email}],

@@ -38,6 +38,11 @@ from core import llm, qa_lint, skills
 
 from core import settings as _s
 
+#: What notifications call this system. Neutral default; set
+#: BRAND_LABEL to your own.
+import os
+_LABEL = os.environ.get("BRAND_LABEL", "Marketing agents")
+
 
 
 # ── commit identity, from config rather than a person's name ────────
@@ -356,7 +361,7 @@ def run(brand, budget, dry_run=False, from_raw=False, mode=None, **kw):
         prose = visible_prose(new_text, is_astro)
         fails, _warns = qa_lint.lint(
             {"text": prose, "source_url": "refresh",
-             "presenter_type": "carl_authored"}, channel=None)
+             "presenter_type": "self_authored"}, channel=None)
         if fails:
             print(f"  {c['page']}: held by QA, not offered")
             for x in fails[:4]:
@@ -410,7 +415,7 @@ def run(brand, budget, dry_run=False, from_raw=False, mode=None, **kw):
                 to, _recipient_name(brand),
                 (f"Page edit applied: {c['target']['query']}" if pid in applied_ids
                  else f"Page edit proposed: {c['target']['query']}"), body,
-                sender={"name": "ARP agents",
+                sender={"name": _LABEL,
                         "email": _sender_email(brand)},
                 reply_to=(lc.get("sender") or {}).get("reply_to"))
             print(f"  emailed proposal {pid} to {to}" if not _e

@@ -67,7 +67,7 @@ def main():
                   "This machine has no crontab, no state directory and no live\n"
                   "remotes, so the answer would describe the laptop.\n\n"
                   "Run it where the system runs:\n"
-                  "    ssh mkt 'cd /root/marketing-agents && <command>'\n\n"
+                  "    ssh <your-server> 'cd <install-path> && <command>'\n\n"
                   "CLAUDE.md, Where it runs: the droplet is canonical."
                   % m.group(1))
 

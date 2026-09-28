@@ -755,7 +755,7 @@ def _settle_formats(items, brand=None):
     return notes
 
 
-def _assign_promotion(items, floor=2, spoken_for=None):
+def _assign_promotion(items, floor=2, spoken_for=None, off_funnel=()):
     """Guarantee every article has posts pointing at it.
 
     The prompt asked for roughly a quarter of social items to carry a blog cta
@@ -786,8 +786,14 @@ def _assign_promotion(items, floor=2, spoken_for=None):
         # in the gate.
         if t and i.get("status") == "scheduled":
             have.setdefault(t, []).append(i)
+    # A channel running off-funnel is not a promotion slot. Without this, an
+    # item deliberately planned with no CTA is picked up here, given
+    # cta "blog" and a links_to_blog_id, and then falls back to cta "audit"
+    # below if that article is not in the plan -- so a channel set to carry no
+    # link acquires one, from code that never mentions the channel by name.
     spare = [i for i in items
-             if i.get("channel") in SOCIAL and i.get("status") == "scheduled"
+             if i.get("channel") in SOCIAL and i.get("channel") not in off_funnel
+             and i.get("status") == "scheduled"
              and i.get("id") not in spoken_for
              and not i.get("links_to_blog_id") and i.get("cta") != "book"]
     notes = []
@@ -1011,8 +1017,15 @@ def run(brand, budget, dry_run=False, from_raw=False, mode=None, **kw):
     if _out_dir.exists():
         _spoken_for |= set(f.stem for f in _out_dir.glob("*.md"))
 
+    # Channels whose config puts them off-funnel this phase. Read from config
+    # rather than named here, so the next one needs no code.
+    _off_funnel = {cid for cid, c in (brand.get("channels", {}) or {}).items()
+                   if isinstance(c, dict)
+                   and str(c.get("mode") or "").strip() == "personal_brand"}
+
     def _promote(its):
-        return _assign_promotion(its, spoken_for=_spoken_for)
+        return _assign_promotion(its, spoken_for=_spoken_for,
+                                 off_funnel=_off_funnel)
 
     # Deduplication comes first. Both of the passes below draw on the pool of
     # blog items, and neither should hand a link or a supporting post to an
@@ -1055,17 +1068,15 @@ def run(brand, budget, dry_run=False, from_raw=False, mode=None, **kw):
                 continue
             _held.setdefault(_r.get("item"), []).append(
                 "%s: %s" % (_r.get("rule"), _r.get("detail")))
-        # urls_live does network I/O, which is why it is not in brief_lint's
-        # default check list: the dashboard renders often and must not make
-        # outbound requests. Here it runs once, when the plan is written, which
-        # is the only moment a dead link is still cheap to fix.
-        try:
-            for _r in brief_lint.urls_live(brand, items):
-                if _r.get("severity") == brief_lint.FAIL:
-                    _held.setdefault(_r.get("item"), []).append(
-                        "%s: %s" % (_r.get("rule"), _r.get("detail")))
-        except Exception as _e:
-            print("  note: link liveness not checked: %s" % type(_e).__name__)
+        # urls_live is deliberately NOT called here. This runs when the plan
+        # is written, which is before blog has shipped anything, so no article
+        # in the plan can have a published_url yet and the check failed 100%
+        # of the time. Worse, it recorded the failure against the article, so
+        # every blog item for W39 was held on ARTICLE_NOT_LIVE -- held because
+        # it was not published, and unable to publish because blog ships only
+        # status == "scheduled". Four articles sat in that deadlock for three
+        # days. The check belongs after blog ships, which is what its own
+        # docstring always said.
         for _it in items:
             _why = _held.get(_it.get("id"))
             if _why and _it.get("status") == "scheduled":
@@ -1300,7 +1311,13 @@ An empty changes list is a good answer when nothing has earned a change."""
     plan["items"] = items
     plan.setdefault("review_log", []).append({
         "at": facts["checked_at"], "assessment": assessment, "changes": applied})
-    (bdir / "briefs" / f"{week}.json").write_text(json.dumps(plan, indent=2))
+    # This runs every fifteen minutes against a plan built earlier in the run,
+    # so a published_url blog recorded in between would be overwritten with
+    # nothing -- and blog republishes anything with no url. merge_live keeps
+    # the reviewer's decisions but reads the publication record back off disk
+    # first.
+    from core import brief_io
+    brief_io.merge_live(bdir / "briefs" / f"{week}.json", plan)
 
     # An added item has to be drafted before its slot, and produce only runs
     # its catch-up at 06:00. The review adds items through the day with a slot

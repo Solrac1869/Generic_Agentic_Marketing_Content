@@ -18,6 +18,8 @@ than the hold.
 Report only. Nothing here mutates the brief, the pool, or anything else.
 """
 
+import datetime
+import json
 import re
 
 FAIL = "fail"
@@ -26,6 +28,36 @@ WARN = "warn"
 DAY_START = "07:00"
 DAY_END = "21:00"
 MIN_GAP_MINUTES = 45
+
+
+_DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+
+def _published_ids(brand):
+    """Ids that have already gone out.
+
+    A gate cannot unpublish anything, so nothing here may re-judge a live
+    post. Raises rather than returning an empty set on a bad read: an empty
+    set silently means "nothing is published", which turns the guard off at
+    exactly the moment it is needed.
+    """
+    p = brand["_dir"] / "publish-state.json"
+    return set(json.loads(p.read_text()).get("published", {}))
+
+
+def _slot_gone(item, today):
+    """True when the item's slot is today or already past.
+
+    publish ships only scheduled items whose day is today, and a hold is not
+    re-judged until the next produce run the following morning. So a hold
+    applied on the day of the slot is the slot silently burned -- no drop
+    decision, no email, nothing on the board. Unknown days are treated as not
+    gone, because guessing wrong in that direction costs a hold, not a post.
+    """
+    try:
+        return _DAYS.index(str(item.get("day"))) <= _DAYS.index(today)
+    except ValueError:
+        return False
 
 
 def _rec(item, rule, severity, owner, detail):
@@ -225,6 +257,126 @@ def _campaign(brand, items):
     return out
 
 
+def reassess(brand, items, check_urls=True, timeout=20):
+    """Re-judge every held item against the world as it is now.
+
+    A hold was a one-way door. strategy wrote status="held" when the plan was
+    written on Sunday and no code anywhere ever wrote it back, so an item held
+    on a condition that later cleared stayed held until the week was archived.
+    That is how four articles sat unpublished for three days on
+    ARTICLE_NOT_LIVE -- held because they were not published, unable to publish
+    because blog ships only items still marked "scheduled".
+
+    A hold is a verdict on a moment, so it has to be re-taken. This runs the
+    gate again over the current plan and moves items in both directions:
+
+      held -> scheduled   the failure is gone, so the item is released
+      scheduled -> held   a new failure appeared, so the gate still bites
+
+    An item that still fails keeps its hold, but the reason is rewritten to
+    what is wrong *now* rather than what was wrong on Sunday. Fixing what is
+    left is remedy's job, not this function's: assessment and repair are kept
+    apart so a broken repair can never quietly mark itself passed.
+
+    Returns (released, held, reasons) -- the two id lists and a dict of the
+    current reason per still-held item.
+    """
+    # lint() defaults to scheduled_only, which silently drops held items from
+    # its own input -- ask it about a held item and it cannot see it, so it
+    # reports no failure and this would release everything unconditionally.
+    # The first dry run of this function offered to release five duplicate
+    # posts for exactly that reason. The queue is what is still in play:
+    # scheduled and held together, which is also what makes a held item
+    # visible as a duplicate of a scheduled one. merged and dropped are
+    # decisions already taken and must not be re-judged; an item that has
+    # published keeps status "scheduled", so it stays in scope and a duplicate
+    # of something already out is still caught.
+    live = [i for i in items
+            if (i or {}).get("status") in ("scheduled", "held") and (i or {}).get("id")]
+
+    # A check that could not run has not passed. lint() downgrades a crashing
+    # check to a LINT_ERROR warning and carries on, so one exception in
+    # _duplicates or _sources deletes every FAIL that check would have
+    # produced -- and this function would read that silence as "nothing is
+    # wrong" and release everything the check was holding. Both _sources and
+    # _deliverable import at call time, so a single bad import is enough.
+    # Failing closed here degrades to "nothing released this run", which the
+    # caller already handles.
+    recs = lint(brand, live, scheduled_only=False)
+    broken = [r.get("detail") for r in recs if r.get("rule") == "LINT_ERROR"]
+    if broken:
+        raise RuntimeError("gate1 incomplete, nothing re-assessed: "
+                           + "; ".join(str(b)[:120] for b in broken[:3]))
+
+    fails = {}
+    for r in recs:
+        # An item with no id collapses onto the None key and would hold every
+        # other id-less item with it.
+        if r.get("severity") == FAIL and r.get("item"):
+            fails.setdefault(r.get("item"), []).append(
+                "%s: %s" % (r.get("rule"), r.get("detail")))
+
+    # urls_live is network I/O and belongs here rather than at plan time: by
+    # the time this runs, blog has shipped and an article either answers or it
+    # does not. Asking on Sunday could only ever get one answer.
+    #
+    # An unreachable host is a WARN, not a FAIL, so "I could not ask" reads
+    # identical to "the article is live" unless it is tracked apart. One
+    # thirty-second blip would otherwise release every post held on a dead
+    # link and ship it pointing at a 404.
+    urls_ok = bool(check_urls)
+    if check_urls:
+        try:
+            for r in urls_live(brand, live, timeout=timeout):
+                if r.get("severity") == FAIL and r.get("item"):
+                    fails.setdefault(r.get("item"), []).append(
+                        "%s: %s" % (r.get("rule"), r.get("detail")))
+                elif r.get("rule") == "ARTICLE_UNREACHABLE":
+                    urls_ok = False
+        except Exception as e:
+            urls_ok = False
+            print("  note: link liveness not checked: %s" % type(e).__name__)
+
+    published = _published_ids(brand)
+    today = datetime.date.today().strftime("%a")
+
+    released, held, reasons = [], [], {}
+    for it in items:
+        iid = it.get("id")
+        if not iid:
+            continue
+        why = fails.get(iid)
+        status = it.get("status")
+        was = str(it.get("hold_reason") or "")
+
+        if status == "held" and not why:
+            if "ARTICLE_" in was and not urls_ok:
+                # The only evidence that would clear this hold is the evidence
+                # we failed to gather. Keep it held and try again next run.
+                held.append(iid)
+                reasons[iid] = was
+                continue
+            it["status"] = "scheduled"
+            it.pop("hold_reason", None)
+            released.append(iid)
+        elif status == "held" and why:
+            it["hold_reason"] = "gate1: " + "; ".join(why)[:400]
+            held.append(iid)
+            reasons[iid] = it["hold_reason"]
+        elif status == "scheduled" and why:
+            if iid in published:
+                # Already out. Holding it cannot unpublish it, only hide a
+                # live post from the board and hand remedy something to drop.
+                continue
+            if _slot_gone(it, today):
+                continue
+            it["status"] = "held"
+            it["hold_reason"] = "gate1: " + "; ".join(why)[:400]
+            held.append(iid)
+            reasons[iid] = it["hold_reason"]
+    return released, held, reasons
+
+
 def urls_live(brand, items, timeout=20):
     """Fetch every article URL a post relies on and confirm it answers.
 
@@ -232,36 +384,49 @@ def urls_live(brand, items, timeout=20):
     chain after blog has published and before produce writes anything that
     points at a page. A predicted slug gave four 404s for W36 and nothing
     anywhere would have noticed before the post went out.
+
+    The failure is recorded against the *linking post*, never against the
+    article. An article is not at fault for not being published yet, and
+    blaming it held every blog item for W39 on a condition only publishing
+    could clear -- which nothing could do, because blog ships only items whose
+    status is still "scheduled" and no code anywhere clears a hold.
     """
     import urllib.error
     import urllib.request
-    needed = set()
+    linkers = {}
     for i in items:
-        if i.get("links_to_blog_id"):
-            needed.add(i.get("links_to_blog_id"))
+        t = i.get("links_to_blog_id")
+        if t:
+            linkers.setdefault(t, []).append(i)
     by_id = {i.get("id"): i for i in items}
     out = []
-    for bid in sorted(x for x in needed if x):
+    for bid in sorted(x for x in linkers if x):
+        posts = linkers[bid]
         b = by_id.get(bid)
         if b is None:
             continue
         url = b.get("published_url")
         if not url:
-            out.append(_rec(b, "ARTICLE_NOT_LIVE", FAIL, "blog",
-                            "no published url recorded, so nothing can link to it"))
+            for p_ in posts:
+                out.append(_rec(p_, "ARTICLE_NOT_LIVE", FAIL, "blog",
+                                "%s has no published url, so this post cannot "
+                                "link to it" % bid))
             continue
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "arp-brief-lint/1.0"})
+            req = urllib.request.Request(url, headers={"User-Agent": "brief-lint/1.0"})
             code = urllib.request.urlopen(req, timeout=timeout).status
         except urllib.error.HTTPError as e:
             code = e.code
         except Exception as e:
-            out.append(_rec(b, "ARTICLE_UNREACHABLE", WARN, "blog",
-                            url + " could not be fetched: " + type(e).__name__))
+            for p_ in posts:
+                out.append(_rec(p_, "ARTICLE_UNREACHABLE", WARN, "blog",
+                                url + " could not be fetched: "
+                                + type(e).__name__))
             continue
         if code != 200:
-            out.append(_rec(b, "ARTICLE_DEAD_LINK", FAIL, "blog",
-                            str(code) + " from " + url))
+            for p_ in posts:
+                out.append(_rec(p_, "ARTICLE_DEAD_LINK", FAIL, "blog",
+                                str(code) + " from " + url))
     return out
 
 

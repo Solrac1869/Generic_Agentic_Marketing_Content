@@ -6,9 +6,9 @@ and each run is logged with its cost. Brand-agnostic: the only brand-specific
 input is brands/<id>/brand.yaml.
 
 Usage:
-  ./orchestrator.py --brand arp --agent research
-  ./orchestrator.py --brand arp --agent strategy --dry-run
-  ./orchestrator.py --brand arp --status
+  ./orchestrator.py --brand <id> --agent research
+  ./orchestrator.py --brand <id> --agent strategy --dry-run
+  ./orchestrator.py --brand <id> --status
 """
 
 import argparse, json, os, sys, datetime, pathlib, importlib
@@ -40,6 +40,42 @@ def load_env():
             pass  # running unprivileged; key may come from the environment
 
 
+def default_brand_id():
+    """The brand to act on when the caller did not name one.
+
+    Nine call sites across three agents and four scripts used this before it
+    existed: the de-branding pass replaced an inlined brand id with a call and
+    never wrote the function. It imports fine and raises AttributeError the
+    first time blog, refresh or publish actually runs, which is the worst
+    possible moment to find out.
+
+    BRAND_ID wins if set. Otherwise, if exactly one brand is configured that
+    is obviously the one meant. More than one is ambiguous and says so rather
+    than picking alphabetically, because publishing one brand's plan under
+    another brand's name is not a failure anyone notices quickly.
+    """
+    import os
+    env = os.environ.get("BRAND_ID", "").strip()
+    if env:
+        return env
+    base = ROOT / "brands"
+    ids = sorted(p.name for p in base.iterdir()
+                 if p.is_dir() and (p / "brand.yaml").exists()) \
+        if base.exists() else []
+    if len(ids) == 1:
+        return ids[0]
+    if not ids:
+        # The single-brand layout. load_brand resolves this to config/.
+        if (ROOT / "config" / "brand.yaml").exists():
+            return "default"
+        raise RuntimeError(
+            "No brand is configured. Copy config/brand.example.yaml to "
+            "config/brand.yaml, then run: python3 setup.py")
+    raise RuntimeError(
+        "%d brands are configured (%s). Set BRAND_ID to choose one."
+        % (len(ids), ", ".join(ids)))
+
+
 def load_brand(brand_id):
     """The brand config, merged from both tiers into one dict.
 
@@ -60,8 +96,17 @@ def load_brand(brand_id):
     """
     d = ROOT / "brands" / brand_id
     path = d / "brand.yaml"
+    # A single-brand install configures config/, which is where setup.py writes
+    # and checks. A multi-brand install uses brands/<id>/. Both were supported
+    # by different halves of this system and neither knew about the other, so a
+    # completed setup left every agent with nothing to load.
+    if not path.exists() and (ROOT / "config" / "brand.yaml").exists():
+        d = ROOT / "config"
+        path = d / "brand.yaml"
     if not path.exists():
-        sys.exit(f"No brand config at {path}")
+        sys.exit(
+            f"No brand config at {path}. Copy config/brand.example.yaml to "
+            f"config/brand.yaml and run: python3 setup.py")
     try:
         import yaml
     except ImportError:
@@ -300,7 +345,7 @@ def status(brand, budget):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--brand", default="arp")
+    ap.add_argument("--brand", default=None)
     ap.add_argument("--agent", help=f"one of: {', '.join(AGENTS)}")
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--dry-run", action="store_true")

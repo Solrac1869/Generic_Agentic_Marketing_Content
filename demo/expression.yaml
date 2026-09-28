@@ -1,0 +1,18 @@
+cadence:
+  articles_per_week: 2
+  social_posts_per_week: 10
+
+bounds:
+  min_articles_per_week: 1
+  max_articles_per_week: 4
+  min_pillars_used: 2
+
+channels:
+  linkedin_personal:
+    max_per_week: 5
+    formats: [long_form_text]
+    hashtags: [Manufacturing, Reliability]
+    retired_hashtags: []
+  blog:
+    min_per_week: 1
+    max_per_week: 3

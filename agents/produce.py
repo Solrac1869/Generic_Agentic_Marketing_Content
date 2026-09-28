@@ -18,16 +18,15 @@ Design decisions worth knowing:
 * Nothing here publishes. It only writes files.
 """
 
-import os
 import datetime
 import re, json, pathlib
-from core import weeks, skills
+from core import weeks, skills, settings
 from core import hero_image, llm, qa_lint, utm
 
-#: Prefix on anything this sends to a person. Neutral by
-#: default; set BRAND_LABEL to your own.
+#: What notifications call this system. Neutral default; set
+#: BRAND_LABEL to your own.
+import os
 _LABEL = os.environ.get("BRAND_LABEL", "Marketing agents")
-
 
 SYSTEM = """You write for a specific B2B brand. You follow its voice rules
 exactly, they are not suggestions, and a draft that breaks one is discarded.
@@ -125,10 +124,28 @@ def _product_block(brand):
             + f.read_text()[:6000] + "\n=== END GROUND TRUTH ===\n")
 
 
+def _presenter_for(brand, channel):
+    """Who the reader understands to be speaking.
+
+    brand_narrator is the default and carries two rules: it may not claim
+    first-person experience, and it may not name the operator. Both are right for the
+    brand's own accounts and wrong for an account in his own name, where the
+    operational scars are the whole credibility argument and the byline is
+    his.
+
+    Resolved per channel and per mode, so a phase ends by deleting the mode
+    line rather than by remembering to change this back too.
+    """
+    c = (brand.get("channels", {}) or {}).get(channel, {}) or {}
+    mode = str(c.get("mode") or "").strip()
+    return str(c.get("presenter_type_" + mode) if mode and c.get("presenter_type_" + mode)
+               else c.get("presenter_type") or "brand_narrator").strip()
+
+
 def _voice_block(brand, channel=None):
     """The voice rules, plus whatever stance this channel is written in.
 
-    A personal LinkedIn account is not the brand's account. Carl posts there
+    A personal LinkedIn account is not the brand's account. The operator posts there
     while job-hunting, so a post reading "try our free audit" tells a recruiter
     he is selling his own thing, where the same post phrased as a practitioner
     passing on something useful reads as expertise. The substance does not
@@ -141,6 +158,13 @@ def _voice_block(brand, channel=None):
     stance = ""
     if channel:
         ch = (brand.get("channels", {}) or {}).get(channel, {}) or {}
+        # A channel running in a named mode may carry a stance of its own.
+        # Two blocks rather than one edited in place, so ending a phase is
+        # deleting the mode line, not rewriting prose and hoping the previous
+        # wording comes back intact.
+        _mode = str(ch.get("mode") or "").strip()
+        if _mode and ch.get("stance_" + _mode):
+            ch = {**ch, "stance": ch["stance_" + _mode]}
         if ch.get("stance"):
             stance = "\n\nSTANCE FOR THIS CHANNEL, it overrides the brand voice "\
                      "where they disagree:\n" + str(ch["stance"]).strip() + "\n"
@@ -646,6 +670,46 @@ def run(brand, budget, dry_run=False, from_raw=False, only_channel=None, **kw):
     if not brief.exists():
         return f"No calendar at {brief}, run the strategy agent first."
 
+    # Every hold is re-judged before anything else runs, because a hold is a
+    # verdict on a moment and this is a different moment. Before this, gate1
+    # was a one-way door: strategy wrote status="held" when the plan was
+    # written and no code anywhere ever wrote it back. An item held on a
+    # condition that later cleared stayed held until the week was archived.
+    # Four articles sat unpublished for three days that way.
+    #
+    # Releasing here, above the "scheduled" filter below, means an item freed
+    # on this run is drafted on this run rather than waiting for the next one.
+    # Repair is deliberately not done here -- remedy owns that -- so that a
+    # failed repair can never mark its own work as passed.
+    if not dry_run:
+        try:
+            from core import brief_lint as _bl, brief_io as _bio
+            # Under the shared lock, on a copy re-read inside it. Mutating a
+            # copy loaded before the lock was taken is the lost update that
+            # can blank a published_url and republish a live article.
+            with _bio.update(brief) as _p:
+                _rel, _stuck, _why = _bl.reassess(brand, _p.get("items", []))
+            _bio.note_reassess(True, "released %d, held %d" % (len(_rel), len(_stuck)))
+            if _rel:
+                print("  released from hold: %s" % ", ".join(_rel))
+            if _stuck:
+                print("  still held: %d item(s)" % len(_stuck))
+                for _i in _stuck[:5]:
+                    print("    %s  %s" % (_i, _why.get(_i, "")[:88]))
+            if not _rel and not _stuck:
+                print("  no items held")
+        except Exception as _e:
+            # A re-assessment that crashes must not take the drafting run with
+            # it, but it must not pass silently either: an unenforced gate is
+            # exactly what this replaced.
+            try:
+                from core import brief_io as _bio2
+                _bio2.note_reassess(False, "%s: %s" % (type(_e).__name__, _e))
+            except Exception:
+                pass
+            print("  WARNING: holds not re-assessed: %s: %s"
+                  % (type(_e).__name__, str(_e)[:120]))
+
     plan = json.loads(brief.read_text())
 
     # Where each commissioned article will live. The slug is a pure function of
@@ -792,12 +856,41 @@ def run(brand, budget, dry_run=False, from_raw=False, only_channel=None, **kw):
                             pass
                         meta = {**it, "channel": channel, "tagged_url": tagged.get(it["id"]),
                                 "source": it.get("source_url"), "text": body,
-                                "presenter_type": "brand_narrator"}
+                                "presenter_type": _presenter_for(brand, channel)}
                         # A channel carrying a stance is not the brand's own account, so
                         # the possessive check applies. Driven by config rather than a
                         # hardcoded channel name, so the next one needs no code.
-                        meta["detached_stance"] = bool(
-                            (brand.get("channels", {}).get(channel) or {}).get("stance"))
+                        _cfg = (brand.get("channels", {}).get(channel) or {})
+                        meta["detached_stance"] = bool(_cfg.get("stance"))
+                        # The gate takes no brand, so the channel's own rules
+                        # travel on the item. Same route detached_stance uses.
+                        meta["allowed_hashtags"] = _cfg.get("hashtags") or []
+                        meta["max_hashtags"] = _cfg.get("max_hashtags")
+                        # Off-funnel: this channel is somebody's own point of
+                        # view this phase, not a business with an offering.
+                        # The terms are derived from config, never hardcoded,
+                        # so another brand needs no code.
+                        if str(_cfg.get("mode") or "").strip() == "personal_brand":
+                            _site = str(brand.get("site") or "")
+                            _host = _site.split("//", 1)[-1].strip("/").lower()
+                            _terms = [brand.get("name"), _host]
+                            if "." in _host:
+                                _terms.append(_host.split(".")[0])
+                            for _u in (brand.get("ctas") or {}).values():
+                                _h = str(_u).split("//", 1)[-1].split("/")[0]
+                                if _h:
+                                    _terms.append(_h)
+                            meta["off_funnel"] = True
+                            # Urls this channel may still carry while
+                            # off-funnel. Named in config by cta key, so the
+                            # decision is visible next to the mode rather than
+                            # buried in a gate.
+                            _ctas = brand.get("ctas") or {}
+                            meta["off_funnel_allow_urls"] = [
+                                _ctas[k] for k in (_cfg.get("allow_ctas") or [])
+                                if _ctas.get(k)]
+                            meta["off_funnel_terms"] = sorted(
+                                {str(t).strip() for t in _terms if str(t).strip()})
                         records = qa_lint.lint_records(meta, channel=channel)
                         fails = [r["detail"] for r in records if r["severity"] == "fail"]
                         warns = [r["detail"] for r in records if r["severity"] == "warn"]
@@ -842,8 +935,29 @@ def run(brand, budget, dry_run=False, from_raw=False, only_channel=None, **kw):
                             # a few milliseconds.
                             if channel in ("x", "linkedin_personal", "linkedin_company"):
                                 try:
+                                    # A personal_brand channel is the person,
+                                    # not the company: same card, his name on
+                                    # it, and no domain. Any other channel
+                                    # keeps the company card unchanged.
+                                    _cc = (brand.get("channels", {}) or {}).get(channel, {})
+                                    if _cc.get("mode") == "personal_brand":
+                                        # The person, not the company: their
+                                        # byline and no domain. Empty when no
+                                        # byline is configured, which is a
+                                        # clean card rather than a wrong name.
+                                        _card_kw = {
+                                            "kicker": (settings.author(brand) or "").upper(),
+                                            "footer": "", "signature": ""}
+                                    else:
+                                        _site = str(settings.get(brand, "site", "") or "")
+                                        _name = str(settings.get(brand, "name", "") or "")
+                                        _card_kw = {
+                                            "kicker": _name.upper(),
+                                            "footer": _site.split("//")[-1].rstrip("/"),
+                                            "signature": (_name + ".") if _name else ""}
                                     img, alt = hero_image.social_card(
-                                        body, it["id"], out_dir / f"{it['id']}-card.png")
+                                        body, it["id"], out_dir / f"{it['id']}-card.png",
+                                        **_card_kw)
                                     record["card"] = img.name
                                     (out_dir / f"{it['id']}-card.txt").write_text(alt)
                                 except Exception as e:

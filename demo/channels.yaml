@@ -1,0 +1,26 @@
+# The demo publishes nowhere. Every destination is local so you can run the
+# whole pipeline, read what it produced, and publish nothing by accident.
+channels:
+  linkedin_personal:
+    enabled: true
+    mode: personal_brand
+    priority: 1
+    char_limit: 3000
+    formats: [long_form_text]
+    max_hashtags: 2
+  blog:
+    enabled: true
+    priority: 2
+    publisher: local            # git | webhook | local
+    content_dir: state/demo-site/blog
+    formats: [article]
+
+video:
+  enabled: false
+
+analytics:
+  enabled: false
+
+notify:
+  enabled: false
+  provider: none

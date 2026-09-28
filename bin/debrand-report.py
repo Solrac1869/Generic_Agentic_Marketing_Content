@@ -26,9 +26,24 @@ FORBIDDEN = [
     (r"\b165\.245\.252\.73\b", "the original server's IP"),
     (r"\b161\.35\.74\.240\b", "another of the original servers"),
     (r"Carl Chessum", "the original owner's name"),
+    # The display forms. The domain pattern above has no spaces and the full
+    # name is only one of the ways a person appears, so a sender defaulting to
+    # "AI Readiness Partner" and a rule hardcoding "chessum" both passed a
+    # report that said "nothing assumes a particular brand".
+    (r"AI\s+Readiness\s+Partner", "the original brand's display name"),
+    (r"\bAIRP\b", "the original brand's initials"),
+    (r"\bchessum\b", "the original owner's surname"),
+    (r"\bcarl\b", "the original owner's first name"),
+    (r"\bcarl_authored\b", "a presenter type named after the original owner"),
     (r"\b2UMI2FME0FFUFMlUoRER\b", "the original brand's voice id"),
     (r"\b536592493\b", "the original GA4 property"),
     (r"Solrac1869", "the original GitHub account"),
+    # Added after a sweep found nine call sites, three hardcoded server paths
+    # and a brand-named output directory that every pattern above missed.
+    (r"\bARP\b", "the original brand's short name"),
+    (r"brands/arp\b", "the original brand's config directory"),
+    (r"/root/marketing-agents", "the original install path"),
+    (r"/var/www/arp-", "the original web root"),
     (r"relay\.[a-z0-9-]+\.", "the original notification host"),
     (r"go\.aireadiness", "the original sending domain"),
 ]

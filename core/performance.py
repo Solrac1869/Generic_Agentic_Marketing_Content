@@ -24,7 +24,7 @@ Where the file lives, and why it is state/ rather than brands/<id>/:
   The droplet deploys with "git fetch && git reset --mixed FETCH_HEAD", which
   moves HEAD and the index but not the working tree, and an ignored path is not
   in the index at all. The earlier rsync deploy excluded state/ as well. By
-  contrast brands/arp/ carries 32 tracked files, so a store there would sit one
+  contrast brands/<id>/ carries dozens of tracked files, so a store there would sit one
   git checkout away from being erased. A store wiped by a deploy is worse than
   no store, because it looks like it is working.
 

@@ -36,7 +36,10 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 # Running this by path puts bin/ on sys.path, not the project root, so the
 # Telegram notify import below fails without this.
 sys.path.insert(0, str(ROOT))
-OUT = ROOT / "brands/arp/outbound"
+
+from core import orchestrator                                    # noqa: E402
+BRAND = orchestrator.default_brand_id()
+OUT = ROOT / "brands" / BRAND / "outbound"
 # The batch to send. Pinned to a single date in the source until now, so the
 # sender could only ever re-read one file from 1 September and could not pick
 # up a new list however many contacts were waiting. That is most of the reason
@@ -62,6 +65,7 @@ NEVER_MAIL = {a.strip().lower() for a in
 
 SLATE, GOLD = "#1a2730", "#947f5b"
 LOGO = os.environ.get("LOGO_URL", "")
+_LABEL = os.environ.get("BRAND_LABEL", "Marketing agents")
 AUDIT_URL = os.environ.get("PRIMARY_CTA_URL", "")
 HOME_URL = os.environ.get("SITE_URL", "")
 
@@ -205,7 +209,7 @@ def html_of(paragraphs):
          f"<div style='max-width:600px;margin:0 auto;background:#ffffff;"
          f"border-radius:6px;overflow:hidden;border:1px solid #e4e4e0'>"
          f"<div style='background:{SLATE};padding:22px 32px'>"
-         f"<img src='{LOGO}' alt='AI Readiness Partner' width='127' height='72' "
+         f"<img src='{LOGO}' alt='{_LABEL}' width='127' height='72' "
          f"style='display:block;border:0;height:56px;width:auto;color:#ffffff;"
          f"font-size:17px;font-weight:600;line-height:56px'></div>"
          f"<div style='padding:30px 32px 12px'>")
@@ -307,7 +311,7 @@ def main():
     try:
         import yaml
         lc = yaml.safe_load(
-            (ROOT / "brands/arp/lifecycle.yaml").read_text()) or {}
+            (ROOT / "brands" / BRAND / "lifecycle.yaml").read_text()) or {}
         have = {r["email"].lower() for r in roster}
         for sd in (lc.get("seeds") or []):
             if sd.get("email", "").lower() not in have:
@@ -362,7 +366,7 @@ def main():
     if not a.dry_run and unsent_prospects:
         try:
             from agents import crm
-            ok, why, nums = crm.sending_health({"_id": "arp", "_dir": ROOT / "brands/arp"})
+            ok, why, nums = crm.sending_health({"_id": BRAND, "_dir": ROOT / "brands" / BRAND})
             if not ok:
                 sys.exit(f"sending halted by the guard: {why}. Numbers: {nums}. "
                          f"Nothing sent. Investigate before overriding.")

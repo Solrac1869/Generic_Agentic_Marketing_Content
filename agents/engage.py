@@ -5,7 +5,7 @@ The half of social that builds an audience. Publishing without engaging is
 broadcasting, and broadcasting from a small account compounds slowly.
 
 Two phases, like publish: notify shows what it intends to say and waits, ship
-sends what was not vetoed. Replies attach to Carl's brand in public and cannot
+sends what was not vetoed. Replies attach to the operator's brand in public and cannot
 be recalled, so they get the same treatment as posts: drafted by model, passed
 through qa_lint and the humanise gate, held if either fails.
 
@@ -944,12 +944,21 @@ def _is_excluded(text, author, cfg):
 
 def discover(brand, budget, state, dry_run=False):
     """Find posts worth replying to. Does nothing when replying is not permitted."""
-    if not may_reply_to_strangers(brand):
-        # Drafting a reply that cannot be sent costs an Opus call and returns
-        # nothing. Searching for candidates costs API quota for the same
-        # nothing. Stop at the top rather than at the send.
+    cfg = brand.get("growth") or {}
+    for_digest = bool(cfg.get("draft_for_digest"))
+    if not may_reply_to_strangers(brand) and not for_digest:
+        # A draft that cannot be sent AND cannot be handed to a person costs
+        # an Opus call for nothing. But digest() exists precisely for the case
+        # where the tier refuses the reply and the comment still needs
+        # leaving, so "cannot be sent" is not the same as "returns nothing".
+        #
+        # Turning stranger replies off on 12 Sept stopped this drafting too,
+        # and with it the morning list of comments to leave by hand -- the
+        # fallback built for exactly that situation, switched off by the
+        # switch that created the need for it. draft_for_digest separates the
+        # two: may the agent post, and is the work worth doing for a person.
         return 0, ("skipped: this account may only reply to posts that mention "
-                   "it, so a discovered post cannot be replied to")
+                   "it, and growth.draft_for_digest is not set")
     return _discover(brand, budget, state, dry_run)
 
 

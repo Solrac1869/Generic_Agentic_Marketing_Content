@@ -42,7 +42,7 @@ RECHECK_DAYS = 60
 
 
 def _path(brand):
-    return STATE / f"claims-{brand.get('_id', 'arp')}.json"
+    return STATE / f"claims-{brand['_id']}.json"
 
 
 def load(brand):
@@ -136,7 +136,7 @@ def _fetch(url, timeout=25):
         return None, "no url"
     try:
         req = urllib.request.Request(url, headers={
-            "User-Agent": "Mozilla/5.0 (compatible; arp-research/1.0)"})
+            "User-Agent": "Mozilla/5.0 (compatible; research-bot/1.0)"})
         with urllib.request.urlopen(req, timeout=timeout) as r:
             ctype = (r.headers.get("Content-Type") or "").lower()
             raw = r.read(2_000_000)

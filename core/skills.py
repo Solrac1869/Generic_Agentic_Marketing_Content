@@ -128,6 +128,12 @@ FOR_JOB = {
     # failures at the same volume -- a severity problem, which is what
     # incident-commander is for.
     "status":          ["incident-commander", "observability-designer", "analytics"],
+    # remedy decides whether a fault has a safe mechanical answer, applies it,
+    # and judges whether it worked. That is triage under uncertainty -- which
+    # is what incident-commander is for -- and deciding whether a check has
+    # actually cleared, which is observability-designer. It was the one agent
+    # left unmapped, and it is the one now trusted to change the plan.
+    "remedy":          ["incident-commander", "observability-designer"],
 }
 
 _CACHE = {}

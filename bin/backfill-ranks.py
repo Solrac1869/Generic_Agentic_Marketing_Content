@@ -35,7 +35,7 @@ EMPTY_RUN_STOP = 4          # consecutive empty windows means the data has run o
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--brand", default="arp")
+    ap.add_argument("--brand", default=None)
     ap.add_argument("--weeks", type=int, default=70,
                     help="how far back to try, capped by what the property holds")
     ap.add_argument("--pause", type=float, default=1.0, help="seconds between calls")

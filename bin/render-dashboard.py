@@ -20,9 +20,17 @@ import subprocess
 import sys
 import tempfile
 
+# Derived, not declared. This file carried the original author's absolute
+# install path and wrote to a directory named after their brand, in a repo
+# whose README promises nothing assumes where you installed it.
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-OUT = pathlib.Path("/var/www/arp-dashboard/index.html")
+OUT = pathlib.Path(os.environ.get("DASHBOARD_OUT")
+                   or (ROOT / "state" / "dashboard" / "index.html"))
+from core import orchestrator as _orchestrator          # noqa: E402
+BRAND = _orchestrator.default_brand_id()
+BRANDS = "brands/%s" % BRAND
+LABEL = os.environ.get("BRAND_LABEL", "Marketing agents")
 DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 
@@ -55,22 +63,22 @@ def safe(fn, title):
 # ─── data ──────────────────────────────────────────────────────────
 now = datetime.datetime.now()
 week = now.strftime("%G-W%V")
-brief = load(ROOT / ("brands/arp/briefs/%s.json" % week), {"items": []})
+brief = load(ROOT / ("%s/briefs/%s.json" % (BRANDS, week)), {"items": []})
 items = brief.get("items", [])
-pub = load(ROOT / "brands/arp/publish-state.json", {})
+pub = load(ROOT / ("%s/publish-state.json" % BRANDS), {})
 published = pub.get("published", {})
 blocked = pub.get("blocked", {})
 verify = load(ROOT / "state/verify-latest.json", {})
-ledger = load(ROOT / "state/budget-ledger-arp.json", {"days": {}})
-today_budget = load(ROOT / "state/budget-arp.json", {})
-claims_pool = load(ROOT / "state/claims-arp.json", {"claims": {}}).get("claims", {})
+ledger = load(ROOT / ("state/budget-ledger-%s.json" % BRAND), {"days": {}})
+today_budget = load(ROOT / ("state/budget-%s.json" % BRAND), {})
+claims_pool = load(ROOT / ("state/claims-%s.json" % BRAND), {"claims": {}}).get("claims", {})
 by_id = {i.get("id"): i for i in items}
-perf = load(ROOT / "state/performance-arp.json", {"items": {}})
+perf = load(ROOT / ("state/performance-%s.json" % BRAND), {"items": {}})
 # Date-named files only. The directory also holds difficulty.json, which
 # sorts after every 2026-*.json and was therefore picked as "the newest run",
 # producing a Search Console panel of zeros.
-_seo_files = sorted((ROOT / "brands/arp/seo").glob("20??-??-??.json")) \
-    if (ROOT / "brands/arp/seo").exists() else []
+_seo_files = sorted((ROOT / ("%s/seo" % BRANDS)).glob("20??-??-??.json")) \
+    if (ROOT / ("%s/seo" % BRANDS)).exists() else []
 seo = load(_seo_files[-1], {}) if _seo_files else {}
 
 
@@ -90,7 +98,7 @@ def waiting_on_you():
     try:
         from agents import status
         from core import orchestrator
-        brand = orchestrator.load_brand(orchestrator.default_brand_id())
+        brand = orchestrator.load_brand(BRAND)
         _w, _s, waiting, _o = status.gather(brand)
     except BaseException as e:
         return ('<section><h2>Waiting on you</h2><p class="gap">'
@@ -147,7 +155,7 @@ def calendar():
             key=lambda i: mins(i.get("time")) if mins(i.get("time")) is not None else 9999)
         slots = []
         for i in day_items:
-            drafted = (ROOT / ("brands/arp/outputs/%s/%s.md" % (week, i.get("id")))).exists()
+            drafted = (ROOT / ("%s/outputs/%s/%s.md" % (BRANDS, week, i.get("id")))).exists()
             state = "done" if i.get("id") in published else ("ready" if drafted else "held")
             slots.append('<div class="slot %s"><div class="hd">'
                          '<span class="tm">%s</span><span class="ch">%s</span></div>'
@@ -168,7 +176,13 @@ def calendar():
 
 # ─── articles and their promotion ──────────────────────────────────
 def articles():
-    blogs = [i for i in items if i.get("channel") == "blog"]
+    # merged and dropped items are decisions already taken, not plans. Every
+    # other section of this board filters on status; this one did not, so a
+    # duplicate the merge step had already folded into another item still
+    # rendered as its own card, under its own title, saying nothing points at
+    # it -- which read as the system planning the same article twice.
+    blogs = [i for i in items if i.get("channel") == "blog"
+             and i.get("status") not in ("merged", "dropped")]
     if not blogs:
         return section("Articles", '<p class="gap">None commissioned this week.</p>')
     sup = {}
@@ -285,7 +299,7 @@ def health():
 def gate():
     try:
         from core import brief_lint, orchestrator
-        brand = orchestrator.load_brand(orchestrator.default_brand_id())
+        brand = orchestrator.load_brand(BRAND)
         recs = brief_lint.lint(brand, items)
     except BaseException as e:
         return section("Gate 1, the brief",
@@ -476,7 +490,7 @@ tr.sub td{padding-top:0;border-top:0;font-size:12px}
 .fix .fixtitle{font-weight:600;font-size:14px}
 .fix .why{margin:5px 0 0;font-size:13px;color:var(--dim);line-height:1.5}
 
-/* Brand: brands/arp/brand.yaml art_direction + site global.css.
+/* Brand: brands/<id>/brand.yaml art_direction + site global.css.
    ink is the ground, cream the type, gold the one accent. */
 :root{
   --ink:#1a2730; --card:#1d2c35; --raise:#243642; --line:#2f4351;
@@ -658,13 +672,13 @@ n_pub = len([1 for v in published.values() if v.get("status") == "published"])
 n_sched = len([i for i in items if i.get("status") == "scheduled"])
 n_fail = int(verify.get("fail") or 0)
 n_held = len([i for i in items if i.get("status") == "scheduled"
-              and not (ROOT / ("brands/arp/outputs/%s/%s.md" % (week, i.get("id")))).exists()])
+              and not (ROOT / ("%s/outputs/%s/%s.md" % (BRANDS, week, i.get("id")))).exists()])
 n_claims = len([c for c in claims_pool.values()
                 if c.get("status") in ("verified", "source_ok", "repaired")])
 try:
     from agents import status as _status
     from core import orchestrator as _orch
-    _wait_items = _status.gather(_orch.load_brand(_orch.default_brand_id()))[2]
+    _wait_items = _status.gather(_orch.load_brand(BRAND))[2]
 except BaseException:
     _wait_items = []
 n_wait = len(_wait_items)
@@ -695,12 +709,12 @@ page = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="refresh" content="120">
-<title>ARP Agent Board</title>
+<title>__BRAND_LABEL__ Agent Board</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Adamina&family=Poppins:wght@300;400;500;600&display=swap">
 <style>%s</style></head><body><div class="wrap">
 <header>
-  <div class="top"><h1>AI Readiness Partner</h1>
+  <div class="top"><h1>__BRAND_LABEL__</h1>
   <span class="asof">agent board &middot; %s &middot; rebuilt every 5 minutes &middot; <a href="/dashboard/videos">watch this week&rsquo;s videos</a></span></div>
   %s
 </header>
@@ -727,6 +741,12 @@ page = """<!doctype html>
 OUT.parent.mkdir(parents=True, exist_ok=True)
 # Unique temp name. Two overlapping cron runs sharing one .tmp defeats the very
 # atomicity the pattern is here for.
+# The label is substituted after formatting, not interpolated during it: the
+# template is positional %s throughout and adding a named placeholder to it
+# breaks every argument after the first.
+page = page.replace("__BRAND_LABEL__", LABEL)
+
+OUT.parent.mkdir(parents=True, exist_ok=True)
 fd, tmp_name = tempfile.mkstemp(dir=str(OUT.parent), prefix=".render-", suffix=".tmp")
 with os.fdopen(fd, "w") as fh:
     fh.write(page)

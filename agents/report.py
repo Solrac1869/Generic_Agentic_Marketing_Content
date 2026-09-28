@@ -22,9 +22,14 @@ into a decoration:
 
 import datetime
 import json
+import os
 import pathlib
 
 from core import performance
+
+#: What notifications call this system. Neutral default; set
+#: BRAND_LABEL to your own.
+_LABEL = os.environ.get("BRAND_LABEL", "Marketing agents")
 
 UNDEFINED = "undefined"
 
@@ -195,17 +200,39 @@ def gather(brand, week=None):
                     if v.get("status") == "published" and k.startswith(prev)]
         facts["previous"] = {"planned": len(prev_items),
                              "published": len(prev_pub)}
+
+    # Channels deliberately carrying no funnel this phase. Recorded from
+    # config so the report cannot drift from the mode: a channel that is
+    # off-funnel by design will show zero audit attribution, and without this
+    # line a future week reads that as the channel failing and, worse, lets it
+    # drag on a trial verdict that keys off audit starts.
+    facts["off_funnel"] = sorted(
+        cid for cid, c in (brand.get("channels", {}) or {}).items()
+        if isinstance(c, dict) and str(c.get("mode") or "").strip())
+    facts["off_funnel_modes"] = {
+        cid: str((brand.get("channels", {}) or {}).get(cid, {}).get("mode")).strip()
+        for cid in facts["off_funnel"]}
     return facts
 
 
 def format_report(facts, short=False):
     """One page. Numbers first, and undefined where it is undefined."""
     f, v, fu = facts, facts["volume"], facts["funnel"]
-    L = [f"ARP commercial report, {f['week']}", ""]
+    L = [f"{_LABEL} commercial report, {f['week']}", ""]
 
     sw = f["spend_week"]["total_usd"]
     sa = f["spend_all"]["total_usd"]
     mw = (f.get("media_week") or {}).get("total_usd")
+    off = f.get("off_funnel") or []
+    if off:
+        L.append("OFF-FUNNEL, BY DESIGN")
+        for cid in off:
+            L.append(f"  {cid}: mode {f.get('off_funnel_modes', {}).get(cid)}. "
+                     f"No audit link and no CTA, so zero attribution from this "
+                     f"channel is the intended result, not a failure. Exclude "
+                     f"it when judging any trial that keys off audit starts.")
+        L.append("")
+
     L.append(f"SPEND  {_fmt_money(sw)} this week, {_fmt_money(sa)} all time")
     if mw is not None:
         cap = (f.get("media_week") or {}).get("weekly_cap_usd")

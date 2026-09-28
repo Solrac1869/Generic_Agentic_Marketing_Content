@@ -8,7 +8,7 @@ person meant it to.
 
 Run this after editing brand.yaml, and only then:
 
-    python3 bin/approve-invariants.py --brand arp --note "why"
+    python3 bin/approve-invariants.py --brand <id> --note "why"
 
 It records a hash, not the content, so the record cannot drift from the file.
 """
@@ -27,7 +27,7 @@ def digest(path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--brand", default="arp")
+    ap.add_argument("--brand", default=None)
     ap.add_argument("--note", default="", help="why the invariants changed")
     ap.add_argument("--check", action="store_true",
                     help="report whether the record matches, change nothing")

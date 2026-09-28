@@ -356,7 +356,7 @@ def gather(brand):
 
 def format_report(brand, working, stalled, waiting, out, short=False):
     now = datetime.datetime.now().strftime("%a %d %b %H:%M")
-    L = [f"ARP agents, {now}", ""]
+    L = [f"{_LABEL}, {now}", ""]
 
     if stalled:
         L.append(f"STALLED ({len(stalled)})")
@@ -433,7 +433,7 @@ def run(brand, budget, dry_run=False, from_raw=False, mode=None, **kw):
                        else f"{_LABEL}: {len(stalled)} stalled")
             _mid, _err = brevo.send_transactional(
                 to, _recipient_name(brand), subject, body,
-                sender={"name": "ARP agents",
+                sender={"name": _LABEL,
                         "email": _sender_email(brand)},
                 reply_to=(lc.get("sender") or {}).get("reply_to"))
             if _err:
@@ -451,7 +451,7 @@ def run(brand, budget, dry_run=False, from_raw=False, mode=None, **kw):
 
 # ─── Telegram command listener ─────────────────────────────────────
 
-# Carl asks for a report by messaging the bot. The bot has no webhook
+# The operator asks for a report by messaging the bot. The bot has no webhook
 # registered, and registering one would mean changing the audit product's Flask
 # app, which is the read-only revenue path. Polling getUpdates needs no webhook
 # and no change over there.

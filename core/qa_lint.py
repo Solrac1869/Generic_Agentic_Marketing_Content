@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""qa_lint.py, deterministic pre-publish gate for AI Readiness Partner content.
+"""qa_lint.py, deterministic pre-publish gate for published content.
 
 Catches the mechanical failures a model cannot be trusted to self-police, so
 content can publish unattended. Rules come from reference/brand-voice.md and
@@ -70,18 +70,16 @@ def _duration_value(token):
 CORRECT_CONTACT_CTA = ""
 CONTACT_CTA_WRONG = None
 
-CARL_NAMES = re.compile(r"\bcarl\b|\bchessum\b", re.I)
+# Names that must not appear in customer-facing copy, supplied per item from
+# config. Empty disables the rule, which is the right default: a fresh install
+# has no idea whose name should not be used, and a hardcoded one enforces
+# somebody else's on every buyer.
 
-# Kept in step with brands/arp/brand.yaml channels.x.hashtags. Retired
-# 18 Aug 2026 with the SMB framing: #smb, #businessowners, #foundersjourney.
-APPROVED_HASHTAGS = {
-    "#aireadiness", "#aiadoption", "#aigovernance", "#aitransformation",
-    "#datastrategy", "#digitalleadership", "#enterpriseai",
-}
-RETIRED_HASHTAGS = {
-    "#smb", "#businessowners", "#foundersjourney", "#cmo", "#marketingleaders",
-    "#marketingstrategy", "#b2bmarketing", "#marketingtransformation", "#aimarketing",
-}
+# Tags a channel will accept come from that channel's own config
+# (channels.<id>.hashtags). Tags it has deliberately stopped using come from
+# channels.<id>.retired_hashtags. Both are empty here on purpose: a hardcoded
+# blocklist would silently refuse ordinary tags for every buyer who did not
+# happen to retire the same ones.
 
 # ─── Model meta-commentary, the bug that jammed 278 ADHD posts ─────
 # The generator returned a refusal/clarification and the bot tried to tweet it.
@@ -89,8 +87,8 @@ RETIRED_HASHTAGS = {
 META_COMMENTARY = [
     r"\bI need to flag\b", r"\bI cannot\b", r"\bI can't help\b",
     # "As an AI" only counts as a leak in the self referring sense. A bare
-    # \bAs an AI\b also blocks "As an AI readiness partner, we assess your
-    # data", which for a company called AI Readiness Partner is ordinary copy
+    # \bAs an AI\b also blocks "As an AI consultancy, we assess your data",
+    # which for a company whose name begins "AI" is ordinary copy
     # and was the natural way to open a services page. So require what actually
     # follows a model talking about itself: a comma, a model noun, or "I".
     r"\bAs an AI\s*,", r"\bAs an AI\s+(?:language model|assistant|model|chatbot|system)\b",
@@ -202,7 +200,7 @@ HAS_DESTINATION = re.compile(
 #: First-person-plural ownership of the brand, on a channel written in a
 #: detached stance.
 #:
-#: Carl's personal LinkedIn doubles as a shop window while he is job-hunting.
+#: The operator's personal account may double as a shop window.
 #: "Try our free audit" tells a recruiter he is selling his own thing; the
 #: same post as a practitioner passing on something useful reads as expertise.
 #: The stance is in expression.yaml and the prompt carries it, but a prompt is
@@ -428,7 +426,7 @@ def lint_records(item, channel=None):
     _prose = re.sub(r"\]\([^)]*\)", "] ", _prose)      # markdown link targets
     _prose = re.sub(r"(?<![\w.])/[\w/-]+", " ", _prose)  # bare relative paths
     # Absolute urls written without a scheme. Plain-text channels render the
-    # CTA as "example.com/ai-readiness-audit" with no scheme, and neither rule
+    # CTA as "example.com/some-landing-page", and neither rule
     # above can strip it: URL_RE needs http, and the relative-path rule's
     # lookbehind refuses a slash preceded by a word character, which ".com/"
     # always is. 2026-W39-41 was held for a full day over a hyphen that
@@ -576,9 +574,13 @@ def lint_records(item, channel=None):
                             "watching without reading the caption has nowhere "
                             "to go." % _vw))
 
-    # 6. Naming Carl in customer-facing copy
-    if CARL_NAMES.search(text) and presenter != "carl_authored":
-        out.append(_rec("fail", "NAMES_CARL: use 'one of our consultants' in customer-facing copy"))
+    # 6. Naming the operator in customer-facing copy
+    _op = [str(n) for n in (item.get("operator_names") or []) if str(n).strip()]
+    if _op and presenter != "self_authored":
+        _op_re = r"\b(?:%s)\b" % "|".join(re.escape(n) for n in _op)
+        if re.search(_op_re, text, re.I):
+            out.append(_rec("fail", "NAMES_OPERATOR: name a role, not a person, "
+                                    "in customer-facing copy"))
 
     # 7. Unsourced statistics, and misattributed sources
     if STAT_PATTERN.search(text) and not has_source:
@@ -595,7 +597,8 @@ def lint_records(item, channel=None):
         if SELF_IDENTIFY_ROLE.search(text):
             out.append(_rec("fail", "FABRICATED_ROLE: presenter self-identifies as a real role"))
         if CARL_AUTHORITY_LINE.search(text):
-            out.append(_rec("fail", "MISATTRIBUTED_AUTHORITY: '25 years' outside carl_authored"))
+            out.append(_rec("fail", "MISATTRIBUTED_AUTHORITY: a personal "
+                                    "track record claimed outside self_authored"))
     if presenter == "real_testimonial" and item.get("synthetic"):
         out.append(_rec("fail", "ILLEGAL_TESTIMONIAL: synthetic asset tagged real_testimonial"))
 
@@ -625,15 +628,62 @@ def lint_records(item, channel=None):
         # visible either way.
         if not tags:
             out.append(_rec("warn", "NO_HASHTAG: none used, 1 to 2 expected"))
-    if channel == "x":
-        if len(tags) > 2:
-            out.append(_rec("warn", f"HASHTAGS: {len(tags)} used, max 2"))
+    # Per channel, not across the board. The list a channel is told to draw
+    # from lives in expression.yaml and _channel_rules already puts it in the
+    # prompt; until now the gate read a module-level set and only ran for x,
+    # so LinkedIn was instructed to use five tags and allowed to use seven.
+    # The prompt and the gate disagreed and nothing noticed.
+    #
+    # The allowed list arrives on the item, because lint_records takes no
+    # brand: produce reads the channel config and passes it, the same way it
+    # already passes detached_stance. A channel with no configured list is not
+    # gated here at all, which leaves every channel that had no rule exactly
+    # as it was.
+    allowed = {str(t).lower() for t in (item.get("allowed_hashtags") or [])}
+    retired = {str(t).lower() for t in (item.get("retired_hashtags") or [])}
+    cap = item.get("max_hashtags")
+    if allowed:
+        if cap and len(tags) > int(cap):
+            out.append(_rec("warn", f"HASHTAGS: {len(tags)} used, max {cap}"))
         for tag in tags:
             low = tag.lower()
-            if low in RETIRED_HASHTAGS:
+            if low in retired:
                 out.append(_rec("fail", f"RETIRED_HASHTAG: {tag} anchors the wrong audience"))
-            elif low not in APPROVED_HASHTAGS:
-                out.append(_rec("warn", f"HASHTAG_OFF_LIST: {tag}"))
+            elif low not in allowed:
+                # A fail, not a warning, where the channel has an explicit
+                # list. A warning is how a tag the channel was told not to use
+                # goes out anyway.
+                out.append(_rec("fail", f"HASHTAG_OFF_LIST: {tag} is not on this "
+                                        f"channel's list"))
+
+    # N. Off-funnel channels must not name the business.
+    #
+    #    A phase flag on the channel, not a brand rule: while it is set, this
+    #    channel is somebody's own point of view rather than a business with
+    #    an offering, so the company, the product and any link to either are
+    #    out. Enforced rather than merely instructed, because content quietly
+    #    reverting to an old pattern after a few weeks is a failure shape this
+    #    system has had before -- an instruction in a prompt decays, a gate
+    #    does not.
+    if item.get("off_funnel"):
+        # One url may be permitted: the way to reach a person is not the same
+        # as an offering. It is removed before the rest of the check, because
+        # it contains the very domain the terms below forbid -- scanning the
+        # raw text would hold every post carrying the one link that is allowed.
+        scan = text
+        for ok_url in (item.get("off_funnel_allow_urls") or []):
+            base = str(ok_url).split("?", 1)[0].strip()
+            if base:
+                scan = re.sub(re.escape(base) + r"\S*", " ", scan, flags=re.I)
+        low_text = scan.lower()
+        for term in (item.get("off_funnel_terms") or []):
+            t = str(term).strip().lower()
+            if t and t in low_text:
+                out.append(_rec("fail", f"OFF_FUNNEL: names the business or its "
+                                        f"offering ({term})"))
+        if re.search(r"https?://|\b[\w-]+\.(?:com|co\.uk|io|ai)\b", scan, re.I):
+            out.append(_rec("fail", "OFF_FUNNEL: carries a link other than the "
+                                    "one permitted for this channel"))
 
     # N. Humanise pass. Every piece of marketing output goes through the
     #    humanise scanner before it can publish, not as a habit someone has to

@@ -1,0 +1,46 @@
+# A complete fictional brand, so you can run the whole pipeline before you
+# have written a word about yourself. Nothing here is real.
+
+name: Northwind Reliability
+site: https://example.com
+author: J. Fields
+
+audience:
+  segment: plant managers at 100-400 person food manufacturers
+  believes: that downtime is a maintenance problem
+  problem: they find out a line is failing from the shift report, not before it
+
+voice:
+  sound_like: an engineer who has been called out at 3am, not a software vendor
+  byline: J. Fields
+  never:
+    - never claim a result you cannot source
+    - never use "game-changer", "leverage" or "unlock"
+    - never open a post with a rhetorical question
+
+pillars:
+  - id: diagnosis_first
+    description: Questions that make a plant manager audit their own line
+  - id: myth_busting
+    description: Maintenance advice that is widely repeated and wastes money
+  - id: hard_numbers
+    description: Downtime and yield statistics with a named source
+  - id: one_thing_today
+    description: One check a manager can run on their own line this week
+
+ctas:
+  default: primary
+  primary: https://example.com/assess
+  contact: https://example.com/contact
+
+operator_names: []
+
+notify:
+  to: you@example.com
+  to_name: ""
+  from_name: Content agents
+  from_email: agents@example.com
+  board_url: ""
+
+publishing:
+  require_explicit_approval: []

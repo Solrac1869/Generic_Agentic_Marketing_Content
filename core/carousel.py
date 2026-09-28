@@ -160,7 +160,7 @@ def _slide_svg(text, n, total, brand, kicker=""):
     return "\n".join(out)
 
 
-def build(body, out_path, brand=None, kicker="AI Readiness Partner"):
+def build(body, out_path, brand=None, kicker=""):
     """Write a multi-page PDF for this post. Returns (path, slide_count).
 
     Raises ValueError when there is not enough to build a deck, because a one

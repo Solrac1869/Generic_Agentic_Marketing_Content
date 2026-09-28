@@ -271,7 +271,7 @@ def _():
                if any(f.name.startswith(p) for p in
                       ("claims-", "crm-", "performance-", "budget-ledger-"))]
     # A sensitive file is stored encrypted, so <name>.gpg counts. Checking
-    # only for the bare name meant encrypting crm-arp.json made the check that
+    # only for the bare name meant encrypting crm-<brand>.json made the check that
     # guards the backup fail, which would have read as "the backup broke".
     missing = [f.name for f in durable
                if not (snap / f.name).exists()
@@ -343,11 +343,24 @@ def _():
 def _():
     """Checks defined and never invoked read as coverage and provide none."""
     dead = []
-    for fn, where in (("urls_live", "core/brief_lint.py"),):
-        used = any(_calls_in(str(p.relative_to(ROOT)), fn)
-                   for p in list((ROOT / "agents").glob("*.py"))
-                   + list((ROOT / "core").glob("*.py"))
-                   if str(p.relative_to(ROOT)) != where)
+    files = [str(q.relative_to(ROOT))
+             for q in list((ROOT / "agents").glob("*.py"))
+             + list((ROOT / "core").glob("*.py"))]
+    # (function, where it is defined, does a call from its own module count)
+    #
+    # Checking only the leaf was too strict in one direction and too loose in
+    # the other. urls_live is called by reassess, which sits beside it in
+    # brief_lint -- real wiring, but invisible to a rule that ignored the
+    # defining file. So the same-module call counts for urls_live, and the
+    # weight moves to reassess, which must have a caller outside brief_lint or
+    # the whole gate is unreachable behind a function nobody runs. That is the
+    # shape of the original fault: a check that existed, was never called, and
+    # read as coverage for weeks.
+    for fn, where, same_module_counts in (
+            ("urls_live", "core/brief_lint.py", True),
+            ("reassess", "core/brief_lint.py", False)):
+        used = any(_calls_in(f, fn) for f in files
+                   if same_module_counts or f != where)
         if not used:
             dead.append(fn)
     if dead:
@@ -401,22 +414,7 @@ def _():
 #: unscheduled on a host that schedules nothing. Refusing is better than
 #: qualifying, because a qualified failure still reads as a failure.
 def _is_agent_host():
-    """Is this the machine that actually runs the system?
-
-    Asked of the environment rather than a hardcoded path, because the path
-    belongs to whoever installed this. AGENTS_HOST_ROOT names the checkout
-    that runs cron; with it unset, a crontab mentioning this checkout is taken
-    as proof, which is true wherever it is installed.
-    """
-    declared = os.environ.get("AGENTS_HOST_ROOT")
-    if declared:
-        return ROOT == pathlib.Path(declared).resolve()
-    try:
-        crontab = subprocess.run(["crontab", "-l"], capture_output=True,
-                                 text=True, timeout=10).stdout
-    except Exception:
-        return False
-    return str(ROOT) in crontab
+    return bool(os.environ.get("IS_SERVER"))
 
 
 def main():
@@ -427,8 +425,7 @@ def main():
               "the state directory. None of them exist here, so any answer\n"
               "would be about this machine rather than about the system.\n\n"
               "Run it where the system runs:\n"
-              "Run it on the host whose crontab schedules these agents:\n"
-              "    cd <checkout> && python3 bin/conformance.py\n\n"
+              "    ssh <your-server> 'cd <install-path> && python3 bin/conformance.py'\n\n"
               "--local checks only what can be read from the source, for\n"
               "editing. It is not authoritative.")
         return 2

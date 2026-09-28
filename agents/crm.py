@@ -37,7 +37,7 @@ STATE = pathlib.Path(__file__).resolve().parent.parent / "state"
 
 
 def _path(brand):
-    return STATE / f"crm-{brand.get('_id', 'arp')}.json"
+    return STATE / f"crm-{brand['_id']}.json"
 
 
 def load(brand):

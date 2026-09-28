@@ -1,0 +1,33 @@
+# How the brand is expressed this week. Copy to config/expression.yaml.
+#
+# brand.yaml holds the invariants, which only a person changes. This file holds
+# the dials the strategy agent may turn week to week on its own, provided the
+# result stays inside the bounds set here.
+
+cadence:
+  articles_per_week: 3
+  social_posts_per_week: 20
+
+bounds:
+  # The agent may not go outside these, whatever the evidence suggests.
+  min_articles_per_week: 1
+  max_articles_per_week: 6
+  min_pillars_used: 2
+
+# Per-channel expression. Channel credentials and destinations live in
+# channels.yaml; this is only how much and how often.
+channels:
+  linkedin_personal:
+    max_per_week: 7
+    formats: [long_form_text, carousel]
+    # Tags this channel will use, and tags it has deliberately stopped using.
+    hashtags: [YourTag, YourOtherTag]
+    retired_hashtags: []
+  x:
+    max_per_week: 14
+    formats: [single_post, thread]
+    hashtags: [YourTag]
+    retired_hashtags: []
+  blog:
+    min_per_week: 2
+    max_per_week: 4

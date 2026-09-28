@@ -26,7 +26,7 @@ page and the specific change. You never pad a list to look thorough, three
 real problems beat twelve vague ones. If a page is performing well, say so and
 say why, because that pattern is worth repeating."""
 
-UA = {"User-Agent": "Mozilla/5.0 (compatible; ARP-site-audit/1.0)"}
+UA = {"User-Agent": "Mozilla/5.0 (compatible; site-audit/1.0)"}
 
 
 def fetch(url, timeout=25):
@@ -88,12 +88,12 @@ def analyse_page(url, html):
     headings = [re.sub(r"\s+", " ", re.sub(r"(?s)<[^>]+>", "", t)).strip() for _, t in h]
     questions = [x for x in headings if x.rstrip().endswith("?")]
 
-    # Web pages are Carl-authored long-form on his own site, so the social
+    # Web pages are operator-authored long-form on their own site, so the social
     # rules do not apply: his name and authority line are correct here, and
     # there is no character limit. Applying them produced noise, and a noisy
     # audit gets ignored, which is worse than no audit.
     fails, warns = qa_lint.lint(
-        {"text": text[:20000], "presenter_type": "carl_authored"}, channel=None)
+        {"text": text[:20000], "presenter_type": "self_authored"}, channel=None)
     # "Here are the five patterns" is ordinary prose in an essay, not leaked
     # generator output. That check belongs to short social copy only.
     fails = [f for f in fails if not f.startswith("META_COMMENTARY")]
@@ -195,7 +195,7 @@ def find_repairs(pages):
         # its length is fine. Otherwise a wrong claim, once written, is never
         # revisited because the only trigger was character count.
         if desc:
-            d_fails, _ = qa_lint.lint({"text": desc, "presenter_type": "carl_authored"},
+            d_fails, _ = qa_lint.lint({"text": desc, "presenter_type": "self_authored"},
                                       channel=None)
             if d_fails:
                 out.append({"url": url, "kind": "meta_description_breaks_brand_rules",
@@ -339,7 +339,7 @@ pages competing for one query is why neither reaches page one:
 
 FACTS you must not contradict: the audit takes 7 minutes, has 30 questions
 across 6 pillars, and is free. The founder has 25 years of experience, never
-20 or "20+". Never name Carl in customer copy.
+20 or "20+". Never name the operator in customer copy.
 
 Rules: between 120 and 158 characters. State what the reader gets, not what the
 page is about. UK spelling. No em dashes. No "discover", "unlock", "dive into".
@@ -362,7 +362,7 @@ Return one JSON object: {{"description": "..."}}"""
             unfixable.append(f"{slug}: replacement was {len(new_desc)} characters, rejected")
             continue
 
-        d_fails, _dw = qa_lint.lint({"text": new_desc, "presenter_type": "carl_authored"},
+        d_fails, _dw = qa_lint.lint({"text": new_desc, "presenter_type": "self_authored"},
                                     channel=None)
         if d_fails:
             unfixable.append(f"{slug}: replacement failed QA, {d_fails[0][:50]}")

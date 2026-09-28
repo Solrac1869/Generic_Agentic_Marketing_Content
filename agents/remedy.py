@@ -38,20 +38,13 @@ import json
 import pathlib
 import re
 import subprocess
+
+from core import settings
+
+#: What notifications call this system. Neutral default; set
+#: BRAND_LABEL to your own.
 import os
-
-#: Prefix on anything this sends to a person. Neutral by
-#: default; set BRAND_LABEL to your own.
 _LABEL = os.environ.get("BRAND_LABEL", "Marketing agents")
-
-
-#: Who commits generated files. Neutral by default, because a fallback naming
-#: somebody else is worse than no fallback: it works in testing and is wrong
-#: for every other user. Override with AGENT_COMMIT_NAME / AGENT_COMMIT_EMAIL,
-#: or per brand through channels.blog.commit_name / commit_email.
-_AGENT_NAME = os.environ.get("AGENT_COMMIT_NAME", "Content agent")
-_AGENT_EMAIL = os.environ.get("AGENT_COMMIT_EMAIL", "agent@localhost")
-
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 RUNNER = ROOT / "bin" / "run-agent.sh"
@@ -164,15 +157,133 @@ def _fix_uncommitted(brand, detail, dry_run):
         return False, "nothing safe to commit"
     if dry_run:
         return True, "would commit %d generated doc(s)" % len(docs)
+    _name, _email = settings.commit_identity(brand)
     subprocess.run(["git", "-C", str(ROOT), "add", "--"] + docs, timeout=60)
     subprocess.run(["git", "-C", str(ROOT),
-                    "-c", "user.name=%s" % _AGENT_NAME,
-                    "-c", "user.email=%s" % _AGENT_EMAIL,
+                    "-c", "user.name=%s" % _name,
+                    "-c", "user.email=%s" % _email,
                     "commit", "-q", "-m", "docs: regenerated"], timeout=60)
     return True, "committed %d generated doc(s)" % len(docs)
 
 
 #: check name -> remedy. Registered one at a time, on purpose.
+def _fix_plan_held(brand, detail, dry_run):
+    """Clear what is still held after re-assessment, by rule.
+
+    reassess already released everything whose failure had gone. What reaches
+    here is a live failure, so this acts on it rather than leaving it to rot in
+    a status nobody reads. Each rule gets the action a person would take:
+
+      DUPLICATE_TITLE   drop it. The plan already contains the item this one
+                        repeats, so retitling would invent a second subject
+                        nobody commissioned. Dropping is what the critic
+                        already does on the same finding, and it is recorded
+                        as a decision rather than left as a silent hold.
+
+      ARTICLE_NOT_LIVE  run blog. The post is waiting on an article, not on
+      ARTICLE_DEAD_LINK itself, so the fix belongs to the agent that publishes
+                        articles. The next re-assessment releases the post
+                        once the article answers -- this does not release it
+                        here, because running the fix is not evidence it
+                        worked.
+
+    Anything else escalates untouched. A hold with no known mechanical answer
+    is exactly the case where a person should read it.
+    """
+    import copy
+    from core import brief_lint, weeks
+    bdir = brand["_dir"]
+    week = weeks.current_week()
+    brief = bdir / "briefs" / (week + ".json")
+    if not brief.exists():
+        return False, "no brief for %s" % week
+
+    try:
+        plan = json.loads(brief.read_text())
+    except Exception as e:
+        return False, "brief unreadable: %s" % type(e).__name__
+    items = plan.get("items", [])
+
+    # A preview must leave no trace. reassess does outbound HTTP and rewrites
+    # status on the dicts it is handed, so a dry run works on a copy and does
+    # not touch the network at all.
+    work = copy.deepcopy(items) if dry_run else items
+    released, stuck, reasons = brief_lint.reassess(
+        brand, work, check_urls=not dry_run)
+
+    try:
+        published = set(json.loads(
+            (bdir / "publish-state.json").read_text()).get("published", {}))
+    except Exception as e:
+        return False, "publish state unreadable, refusing to drop anything: %s" % type(e).__name__
+    out_dir = bdir / "outputs" / week
+
+    dropped, protected = [], []
+    for it in work:
+        iid = it.get("id")
+        if (iid not in stuck
+                or "DUPLICATE_TITLE" not in (it.get("hold_reason") or "")):
+            continue
+        # Never drop real work. _norm strips case and punctuation, so two
+        # genuinely different titles can collide, and a drop is not
+        # recoverable -- nothing anywhere un-drops an item. Under the old
+        # behaviour a false duplicate cost a hold you could undo. This is an
+        # unattended hourly cron, so it escalates instead.
+        if iid in published or (out_dir / ("%s.md" % iid)).exists():
+            protected.append(iid)
+            continue
+        it["status"] = "dropped"
+        it["dropped_reason"] = it.get("hold_reason")
+        it.pop("hold_reason", None)
+        dropped.append(iid)
+
+    waiting = [i for i in stuck
+               if "ARTICLE_NOT_LIVE" in (reasons.get(i) or "")
+               or "ARTICLE_DEAD_LINK" in (reasons.get(i) or "")]
+
+    if dry_run:
+        return True, ("would release %d, drop %d duplicate(s), run blog for %d, "
+                      "leave %d alone as already real"
+                      % (len(released), len(dropped), len(waiting), len(protected)))
+
+    if released or dropped or stuck:
+        tmp = brief.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(plan, indent=2))
+        tmp.replace(brief)
+
+    if waiting:
+        ok, msg = _run_agent("blog", dry_run=False)
+        if not ok:
+            return False, ("blog failed while %d post(s) waited on an article: %s"
+                           % (len(waiting), msg))
+        # Running the fix is not evidence it worked -- but neither is refusing
+        # to look. Re-judging here reports what actually changed, instead of
+        # leaving plan:held red for the recheck to mail as "tried and still
+        # failing" after every successful run.
+        try:
+            plan = json.loads(brief.read_text())
+            more, stuck, _r2 = brief_lint.reassess(brand, plan.get("items", []))
+            released = list(released) + list(more)
+            tmp = brief.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(plan, indent=2))
+            tmp.replace(brief)
+        except Exception as e:
+            return False, ("blog ran but the re-check failed: %s: %s"
+                           % (type(e).__name__, str(e)[:120]))
+
+    if protected:
+        return False, ("%d duplicate(s) left alone because they have already "
+                       "published or been drafted: %s"
+                       % (len(protected), ", ".join(protected[:4])))
+
+    remaining = [i for i in stuck if i not in dropped and i not in waiting]
+    if remaining:
+        return False, ("%d item(s) held with no mechanical answer: %s"
+                       % (len(remaining), ", ".join(remaining[:4])))
+    return True, ("released %d, dropped %d duplicate(s), ran blog for %d"
+                  % (len(released), len(dropped), len(waiting)))
+
+
 REMEDIES = {
     "crm:freshness":              _rerun("crm"),
     "runs:failures":              _fix_runs_failures,
@@ -182,6 +293,7 @@ REMEDIES = {
     "queue:passes_current_rules": _rerun("produce"),
     "output:brief":               _rerun("strategy", "--mode", "watch"),
     "store:performance":          _rerun("analyse"),
+    "plan:held":                  _fix_plan_held,
 }
 
 #: Checks that report a rolling window rather than a current state.
@@ -260,7 +372,15 @@ def run(brand, budget, dry_run=False, **kw):
                 if not dry_run:
                     seen["attempts"] += 1
                     ledger[name] = seen
-                acted, note = remedy(brand, detail, dry_run)
+                try:
+                    acted, note = remedy(brand, detail, dry_run)
+                except Exception as _e:
+                    # Without this, one remedy raising skips the ledger save,
+                    # the recheck and the escalation email -- so every other
+                    # failing check that run is dropped silently, which is
+                    # worse than the fault being fixed.
+                    acted, note = False, ("remedy crashed: %s: %s"
+                                          % (type(_e).__name__, str(_e)[:160]))
                 print("  %s (warning): %s" % (name, note))
                 if acted:
                     attempted.append(name)
@@ -290,7 +410,15 @@ def run(brand, budget, dry_run=False, **kw):
         if not dry_run:
             seen["attempts"] += 1
             ledger[name] = seen
-        acted, note = remedy(brand, detail, dry_run)
+        try:
+            acted, note = remedy(brand, detail, dry_run)
+        except Exception as _e:
+            # A remedy that raises must escalate, not abort the run. Without
+            # this the ledger is never saved, the recheck never runs and the
+            # escalation email -- the only thing that reaches a person -- is
+            # never sent, so every other fault that run disappears too.
+            acted, note = False, ("remedy crashed: %s: %s"
+                                  % (type(_e).__name__, str(_e)[:160]))
         print("  %s: %s" % (name, note))
         if not acted:
             escalate.append((name, detail, note))

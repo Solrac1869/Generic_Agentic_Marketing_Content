@@ -1,0 +1,23 @@
+# Schedule. Install with: python3 setup.py --install-cron
+# Or paste into `crontab -e` after replacing <INSTALL> with your install path.
+#
+# Times are server time. The Sunday chain builds the whole coming week; the
+# daily chain catches up, checks, and reports.
+
+# The week, built in dependency order. Each step waits on the one before.
+0 14 * * 0  <INSTALL>/bin/run-chain.py sunday
+
+# Every morning: draft anything outstanding, check the system, report it.
+0 6 * * *   <INSTALL>/bin/run-chain.py daily
+
+# Publish whatever is due, every fifteen minutes.
+*/15 * * * * <INSTALL>/bin/run-agent.sh publish
+
+# Fix what the checks found. Hourly, capped at two attempts a day per fault.
+25 * * * *  <INSTALL>/bin/run-agent.sh remedy
+
+# The board.
+*/5 * * * * <INSTALL>/bin/render-dashboard.py
+
+# Back up the irreplaceable state.
+30 3 * * *  <INSTALL>/bin/snapshot-state.py
